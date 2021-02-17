@@ -9,6 +9,17 @@ Starting point: original NERF
 3. Blender (whitebackground) function doesnt work. Dont know why ? If i remove the sigmoid function of the ColorNetwork then it is fine but then the background goes crazy, the content is fine though.
 4. Training with LLFF first.
 
+#### Dataset:
+Download here: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
+
+#### Prerequisite:
+```
+Pytorch
+Pytorch-Lightning
+torch_optimizer
+einops
+```
+
 #### Training:
 ```
 python main.py --dataset_name llff 
