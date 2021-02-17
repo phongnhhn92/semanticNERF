@@ -8,3 +8,14 @@ Starting point: original NERF
 2. Use a single Color network for both coarse and fine NERF
 3. Blender (whitebackground) function doesnt work. Dont know why ? If i remove the sigmoid function of the ColorNetwork then it is fine but then the background goes crazy, the content is fine though.
 4. Training with LLFF first.
+
+#### Training:
+```
+python main.py --dataset_name llff 
+--root_dir /media/phong/Data2TB/dataset/NERF/nerf_llff_data/flower 
+--N_importance 64 --img_wh 504 378 --noise_std 0 
+--num_epochs 16 --batch_size 1024 
+--optimizer adam --lr 5e-4 --lr_scheduler steplr 
+--decay_step 2 4 8 --decay_gamma 0.5 
+--exp_name exp_flower
+```
