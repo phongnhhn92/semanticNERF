@@ -40,15 +40,18 @@ class Embedding(nn.Module):
 
 
 class ColorNetwork(nn.Module):
-    def __init__(self, D=3, W=128, in_channels=64, out_channels=3):
+    def __init__(self, D=8, W=128, in_channels=64, out_channels=3,skips=4):
         super(ColorNetwork, self).__init__()
         self.D = D
         self.W = W
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.skips = skips
         for i in range(self.D):
             if i == 0:
                 layer = nn.Linear(self.in_channels, self.W)
+            elif i == self.skips:
+                layer = nn.Linear(self.W + self.in_channels, self.W)
             else:
                 layer = nn.Linear(self.W, self.W)
             layer = nn.Sequential(layer, nn.ReLU(True))
@@ -69,10 +72,13 @@ class ColorNetwork(nn.Module):
             Outputs:
                 rgb: color of the ray
         """
+        out = x
         for i in range(self.D):
-            x = getattr(self, f"feature_encoding_{i + 1}")(x)
+            if i == self.skips:
+                out = torch.cat([out,x],-1)
+            out = getattr(self, f"feature_encoding_{i + 1}")(out)
 
-        rgb = self.rgb(x)
+        rgb = self.rgb(out)
 
         return rgb
 
