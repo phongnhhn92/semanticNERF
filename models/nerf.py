@@ -40,22 +40,22 @@ class Embedding(nn.Module):
 
 
 class ColorNetwork(nn.Module):
-    def __init__(self, D=8, W=256, in_channels=64, out_channels=3):
+    def __init__(self, D=3, W=128, in_channels=64, out_channels=3):
         super(ColorNetwork, self).__init__()
         self.D = D
         self.W = W
         self.in_channels = in_channels
         self.out_channels = out_channels
-        for i in range(D):
+        for i in range(self.D):
             if i == 0:
-                layer = nn.Linear(in_channels, W)
+                layer = nn.Linear(self.in_channels, self.W)
             else:
-                layer = nn.Linear(W, W)
+                layer = nn.Linear(self.W, self.W)
             layer = nn.Sequential(layer, nn.ReLU(True))
             setattr(self, f"feature_encoding_{i + 1}", layer)
         self.rgb = nn.Sequential(
-            nn.Linear(W , W // 2),
-            nn.Linear(W // 2, 3),
+            nn.Linear(self.W , self.W // 2),
+            nn.Linear(self.W // 2, self.out_channels),
             nn.Sigmoid())
 
     def forward(self, x):

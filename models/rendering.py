@@ -126,7 +126,7 @@ def render_rays(models,
             # out = out.view(N_rays, N_samples_, 4)
             out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=65)
             rgbs = out[..., :64] # (N_rays, N_samples_, 3)
-            sigmas = out[..., 3] # (N_rays, N_samples_)
+            sigmas = out[..., -1] # (N_rays, N_samples_)
             
         # Convert these values using volume rendering (Section 4)
         deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
