@@ -33,4 +33,4 @@ python main.py --dataset_name llff
 
 #### Ideas:
 18-02-2020
-![alt text](/assets/ideas_18-02-2020.jpg "Ideas")
+![](/images/img.png "Ideas")
