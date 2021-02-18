@@ -32,5 +32,7 @@ python main.py --dataset_name llff
 ```
 
 #### Ideas:
+Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DApcRCgLtf2DzNNI3nO4/edit#slide=id.gb4f7efcc71_0_64)
+
 18-02-2020
 ![](/images/img.png "Ideas")
