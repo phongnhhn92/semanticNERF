@@ -3,14 +3,12 @@
 #### 17-02-2020:
 Starting point: original NERF
 
-#### 17-02-2020:
-1. Add feature network
-2. Use a single Color network for both coarse and fine NERF
-3. Blender (whitebackground) function doesnt work. Dont know why ? If i remove the sigmoid function of the ColorNetwork then it is fine but then the background goes crazy, the content is fine though.
-4. Training with LLFF first.
+#### 20-02-2020:
+Add carla dataset, check poses to see if we can train NERF on Carla dataset.
 
 #### Dataset:
-Download here: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
+LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
+Carla dataset: [link](https://drive.google.com/file/d/1ZYIlupT8-Zm7w8G4br2ZoyJfKEEAyEK-/view?ts=6030149b)
 
 #### Prerequisite:
 ```
@@ -34,5 +32,5 @@ python main.py --dataset_name llff
 #### Ideas:
 Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DApcRCgLtf2DzNNI3nO4/edit#slide=id.gb4f7efcc71_0_64)
 
-18-02-2020
+18-02-2020: add another feature vector as output of NERF for semantic prediction.
 ![](/images/img.png "Ideas")

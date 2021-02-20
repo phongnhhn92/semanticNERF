@@ -19,7 +19,7 @@ from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
 
-torch.autograd.set_detect_anomaly(True)
+
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
@@ -33,19 +33,13 @@ class NeRFSystem(LightningModule):
                            'dir': self.embedding_dir}
 
         self.nerf_coarse = NeRF()
-        self.coarse_featureNet = ColorNetwork()
-        self.models = {'coarse': self.nerf_coarse, 'feature':self.coarse_featureNet}
+        self.models = {'coarse': self.nerf_coarse}
         load_ckpt(self.nerf_coarse, hparams.weight_path, 'nerf_coarse')
-
 
         if hparams.N_importance > 0:
             self.nerf_fine = NeRF()
             self.models['fine'] = self.nerf_fine
             load_ckpt(self.nerf_fine, hparams.weight_path, 'nerf_fine')
-
-        # Shared Color network. Dont know if seperating coarse and fine Color networks is better or not.
-        self.featureNet = ColorNetwork()
-        self.models['feature'] = self.featureNet
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -98,6 +92,13 @@ class NeRFSystem(LightningModule):
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset,
+                          shuffle=False,
+                          num_workers=4,
+                          batch_size=1,  # validate one image (H*W rays) at a time
+                          pin_memory=True)
+
     def training_step(self, batch, batch_nb):
         rays, rgbs = batch['rays'], batch['rgbs']
         results = self(rays)
@@ -112,13 +113,6 @@ class NeRFSystem(LightningModule):
         self.log('train/psnr', psnr_, prog_bar=True)
 
         return loss
-
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset,
-                          shuffle=False,
-                          num_workers=4,
-                          batch_size=1,  # validate one image (H*W rays) at a time
-                          pin_memory=True)
 
     def validation_step(self, batch, batch_nb):
         rays, rgbs = batch['rays'], batch['rgbs']

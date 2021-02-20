@@ -124,9 +124,9 @@ def render_rays(models,
 
             out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
-            out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=65)
-            rgbs = out[..., :64] # (N_rays, N_samples_, 3)
-            sigmas = out[..., -1] # (N_rays, N_samples_)
+            out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=4)
+            rgbs = out[..., :3] # (N_rays, N_samples_, 3)
+            sigmas = out[..., 3] # (N_rays, N_samples_)
             
         # Convert these values using volume rendering (Section 4)
         deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
@@ -153,14 +153,9 @@ def render_rays(models,
         if test_time and typ == 'coarse' and 'fine' in models:
             return
 
-        feature_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1')*rgbs, 'n1 n2 c -> n1 c', 'sum')
+        rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1')*rgbs, 'n1 n2 c -> n1 c', 'sum')
         depth_map = reduce(weights*z_vals, 'n1 n2 -> n1', 'sum')
 
-        rgb_map = models['feature'](feature_map)
-
-        # Currently, this is not working with Blender dataset.
-        # Only works if I remove the sigmoid function of the ColorNetwork.
-        # However, the background goes crazy, content is fine
         if white_back:
             rgb_map += 1-weights_sum.unsqueeze(1)
 

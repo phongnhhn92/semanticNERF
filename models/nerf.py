@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 
-
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True):
         """
@@ -12,12 +11,12 @@ class Embedding(nn.Module):
         self.N_freqs = N_freqs
         self.in_channels = in_channels
         self.funcs = [torch.sin, torch.cos]
-        self.out_channels = in_channels * (len(self.funcs) * N_freqs + 1)
+        self.out_channels = in_channels*(len(self.funcs)*N_freqs+1)
 
         if logscale:
-            self.freq_bands = 2 ** torch.linspace(0, N_freqs - 1, N_freqs)
+            self.freq_bands = 2**torch.linspace(0, N_freqs-1, N_freqs)
         else:
-            self.freq_bands = torch.linspace(1, 2 ** (N_freqs - 1), N_freqs)
+            self.freq_bands = torch.linspace(1, 2**(N_freqs-1), N_freqs)
 
     def forward(self, x):
         """
@@ -34,59 +33,15 @@ class Embedding(nn.Module):
         out = [x]
         for freq in self.freq_bands:
             for func in self.funcs:
-                out += [func(freq * x)]
+                out += [func(freq*x)]
 
         return torch.cat(out, -1)
-
-
-class ColorNetwork(nn.Module):
-    def __init__(self, D=8, W=128, in_channels=64, out_channels=3,skips=4):
-        super(ColorNetwork, self).__init__()
-        self.D = D
-        self.W = W
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.skips = skips
-        for i in range(self.D):
-            if i == 0:
-                layer = nn.Linear(self.in_channels, self.W)
-            elif i == self.skips:
-                layer = nn.Linear(self.W + self.in_channels, self.W)
-            else:
-                layer = nn.Linear(self.W, self.W)
-            layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"feature_encoding_{i + 1}", layer)
-        self.rgb = nn.Sequential(
-            nn.Linear(self.W , self.W // 2),
-            nn.Linear(self.W // 2, self.out_channels),
-            nn.Sigmoid())
-
-    def forward(self, x):
-        """
-            After alpha compositing the learned emb feature of all sampled 3D points in a ray,
-            encode the emb feature of the entire ray to the color of the ray.
-
-            Inputs:
-                x: the learned embedded feature of the ray
-
-            Outputs:
-                rgb: color of the ray
-        """
-        out = x
-        for i in range(self.D):
-            if i == self.skips:
-                out = torch.cat([out,x],-1)
-            out = getattr(self, f"feature_encoding_{i + 1}")(out)
-
-        rgb = self.rgb(out)
-
-        return rgb
 
 
 class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
-                 in_channels_xyz=63, in_channels_dir=27, emb_channels = 64,
+                 in_channels_xyz=63, in_channels_dir=27, 
                  skips=[4]):
         """
         D: number of layers for density (sigma) encoder
@@ -100,7 +55,6 @@ class NeRF(nn.Module):
         self.W = W
         self.in_channels_xyz = in_channels_xyz
         self.in_channels_dir = in_channels_dir
-        self.emb_channels = emb_channels
         self.skips = skips
 
         # xyz encoding layers
@@ -108,25 +62,23 @@ class NeRF(nn.Module):
             if i == 0:
                 layer = nn.Linear(in_channels_xyz, W)
             elif i in skips:
-                layer = nn.Linear(W + in_channels_xyz, W)
+                layer = nn.Linear(W+in_channels_xyz, W)
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"xyz_encoding_{i + 1}", layer)
+            setattr(self, f"xyz_encoding_{i+1}", layer)
         self.xyz_encoding_final = nn.Linear(W, W)
 
         # direction encoding layers
         self.dir_encoding = nn.Sequential(
-            nn.Linear(W + in_channels_dir, W // 2),
-            nn.ReLU(True))
+                                nn.Linear(W+in_channels_dir, W//2),
+                                nn.ReLU(True))
 
         # output layers
         self.sigma = nn.Linear(W, 1)
-        # self.rgb = nn.Sequential(
-        #                 nn.Linear(W//2, 3),
-        #                 nn.Sigmoid())
-        self.emb_layer = nn.Sequential(
-            nn.Linear(W // 2, emb_channels))
+        self.rgb = nn.Sequential(
+                        nn.Linear(W//2, 3),
+                        nn.Sigmoid())
 
     def forward(self, x, sigma_only=False):
         """
@@ -155,7 +107,7 @@ class NeRF(nn.Module):
         for i in range(self.D):
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
-            xyz_ = getattr(self, f"xyz_encoding_{i + 1}")(xyz_)
+            xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma = self.sigma(xyz_)
         if sigma_only:
@@ -165,8 +117,8 @@ class NeRF(nn.Module):
 
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
-        feature = self.emb_layer(dir_encoding)
+        rgb = self.rgb(dir_encoding)
 
-        out = torch.cat([feature, sigma], -1)
+        out = torch.cat([rgb, sigma], -1)
 
         return out
