@@ -1,8 +1,7 @@
 from .carla_utils.utils import *
 from torchvision import transforms as T
 from torch.utils.data import Dataset
-from .carla_utils.utils import *
-
+from .ray_utils import *
 
 class CarlaDataset(Dataset):
     def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1):
