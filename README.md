@@ -16,10 +16,10 @@ Carla dataset: [link](https://drive.google.com/file/d/1ZYIlupT8-Zm7w8G4br2ZoyJfK
 
 #### Prerequisite:
 ```
-Pytorch
-Pytorch-Lightning
-torch_optimizer
-einops
+Pytorch 1.7.1
+Pytorch-Lightning 1.2.0
+torch_optimizer 0.1.0 
+einops 0.3.0
 ```
 
 #### Training:
