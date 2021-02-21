@@ -20,6 +20,9 @@ Pytorch 1.7.1
 Pytorch-Lightning 1.2.0
 torch_optimizer 0.1.0 
 einops 0.3.0
+test-tube
+kornia
+cv2
 ```
 
 #### Training:
