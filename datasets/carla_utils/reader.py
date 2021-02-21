@@ -1,12 +1,12 @@
 import torch,argparse
 import torchvision
-from utils import *
+from .utils import *
 
 def get_opts():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--root_dir', type=str,
-                        default='/media/phong/Data2TB/dataset/carla/carla/carla_phong_2/Town01/episode_00001/',
+                        default='/media/phong/Data2TB/dataset/carla/carla/carla_phong_2/Town01/episode_00001/000000',
                         help='root directory of carla')
 
     return parser.parse_args()
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     pts_2d_cam_b = torch.matmul(cam_b['k'].view(1, 1, 1, 3, 3), pts_3d_cam_b)
     pts_2d_cam_b[..., 0, 0] = pts_2d_cam_b[..., 0, 0] / pts_2d_cam_b[..., 2, 0]
     pts_2d_cam_b[..., 1, 0] = pts_2d_cam_b[..., 1, 0] / pts_2d_cam_b[..., 2, 0]
-    # cample cam b color image using
+    # sample cam b color image using
     sampling_grid = (pts_2d_cam_b[:, :, :, :2, 0]).view(b, h, w, 2)
     cam_a['rgb_est'] = warp(sampling_grid, cam_b['rgb'])
 
