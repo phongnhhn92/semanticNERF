@@ -54,6 +54,10 @@ class CarlaDataset(Dataset):
         self.spheric_poses = spheric_poses
         self.val_num = max(1, val_num)
 
+        # For rendering
+        self.type = 'spiral'
+        #self.type = 'horizontal'
+
         assert self.split != 'train' or self.split != 'val', 'Not implemented yet'
         self.define_transforms()
         self.read_meta()
@@ -117,11 +121,22 @@ class CarlaDataset(Dataset):
             if self.split.endswith('train'): # test on training set
                 self.poses_test = self.list_pose
             elif not self.spheric_poses:
-                focus_depth = 3.5 # hardcoded, this is numerically close to the formula
-                                  # given in the original repo. Mathematically if near=1
-                                  # and far=infinity, then this number will converge to 4
-                radii = np.percentile(np.abs(self.list_pose[..., 3]), 90, axis=0)
-                self.poses_test = create_spiral_poses(radii, focus_depth,n_poses=120)
+                if self.type == 'spiral':
+                    focus_depth = 3.5 # hardcoded, this is numerically close to the formula
+                                      # given in the original repo. Mathematically if near=1
+                                      # and far=infinity, then this number will converge to 4
+                    radii = np.percentile(np.abs(self.list_pose[..., 3]), 90, axis=0)
+                    self.poses_test = create_spiral_poses(radii, focus_depth,n_poses=120)
+                elif self.type == 'horizontal':
+                    # Hard-coded since we know the x axis span between -0.3 and 0.3
+                    arr = np.linspace(-1, 1, 50)
+                    self.poses_test = []
+                    for a in arr:
+                        temp_p = self.list_pose[0].clone()
+                        temp_p[0,3] = a
+                        self.poses_test.append(temp_p)
+                    self.poses_test = torch.stack(self.poses_test)
+
 
     def __len__(self):
         if self.split == 'train':
