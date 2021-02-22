@@ -9,6 +9,10 @@ Add carla dataset, check poses to see if we can train NERF on Carla dataset.
 #### 21-02-2020:
 Train NERF on CARLA dataset.No semantic yet. Check if input poses are good or not.
 
+#### 22-02-2020:
+Initial result on training NERF + Carla. Only use RGB atm. val/psnr=35.80, train/psnr=35.70
+![](/images/result_NERF_CARLA_22-02-2020.png "NERF+CARLA")
+
 #### Dataset:
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
 
@@ -46,6 +50,7 @@ python main.py --dataset_name carla
 --optimizer adam --lr 5e-4 --lr_scheduler steplr --decay_step 2 4  
 --decay_gamma 0.5 --exp_name exp_carla
 ```
+
 
 #### Ideas:
 Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DApcRCgLtf2DzNNI3nO4/edit#slide=id.gb4f7efcc71_0_64)

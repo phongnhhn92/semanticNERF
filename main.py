@@ -21,9 +21,11 @@ from metrics import *
 
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.loggers import TestTubeLogger
 
+# sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
+seed_everything(100)
 
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
@@ -173,7 +175,8 @@ def main(hparams):
                       accelerator='ddp' if hparams.num_gpus>1 else None,
                       num_sanity_val_steps=1,
                       benchmark=True,
-                      profiler="simple" if hparams.num_gpus==1 else None)
+                      profiler="simple" if hparams.num_gpus==1 else None,
+                      deterministic= True)
 
     trainer.fit(system)
 
