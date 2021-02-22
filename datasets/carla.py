@@ -3,6 +3,44 @@ from torchvision import transforms as T
 from torch.utils.data import Dataset
 from .ray_utils import *
 
+def normalize(v):
+    """Normalize a vector."""
+    return v/np.linalg.norm(v)
+
+def create_spiral_poses(radii, focus_depth, n_poses=120):
+    """
+    Computes poses that follow a spiral path for rendering purpose.
+    See https://github.com/Fyusion/LLFF/issues/19
+    In particular, the path looks like:
+    https://tinyurl.com/ybgtfns3
+
+    Inputs:
+        radii: (3) radii of the spiral for each axis
+        focus_depth: float, the depth that the spiral poses look at
+        n_poses: int, number of poses to create along the path
+
+    Outputs:
+        poses_spiral: (n_poses, 3, 4) the poses in the spiral path
+    """
+
+    poses_spiral = []
+    for t in np.linspace(0, 4 * np.pi, n_poses + 1)[:-1]:  # rotate 4pi (2 rounds)
+        # the parametric function of the spiral (see the interactive web)
+        center = np.array([np.cos(t), -np.sin(t), -np.sin(0.5 * t)]) * radii
+
+        # the viewing z axis is the vector pointing from the @focus_depth plane
+        # to @center
+        z = normalize(center - np.array([0, 0, -focus_depth]))
+
+        # compute other axes as in @average_poses
+        y_ = np.array([0, 1, 0])  # (3)
+        x = normalize(np.cross(y_, z))  # (3)
+        y = np.cross(z, x)  # (3)
+
+        poses_spiral += [np.stack([x, y, z, center], 1)]  # (3, 4)
+
+    return np.stack(poses_spiral, 0)  # (n_poses, 3, 4)
+
 class CarlaDataset(Dataset):
     def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1):
         """
@@ -72,18 +110,27 @@ class CarlaDataset(Dataset):
             assert len(self.all_rays) != self.all_rgbs, 'Mismatch number of rays and rgb'
             self.all_rays = torch.cat(self.all_rays, 0)  # ((N_images-1)*h*w, 8)
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
-        else:
+        elif self.split == 'val':
             print('val image number is', n ** 2 // 2)
             self.val_idx = n ** 2 // 2
+        else:
+            if self.split.endswith('train'): # test on training set
+                self.poses_test = self.list_pose
+            elif not self.spheric_poses:
+                focus_depth = 3.5 # hardcoded, this is numerically close to the formula
+                                  # given in the original repo. Mathematically if near=1
+                                  # and far=infinity, then this number will converge to 4
+                radii = np.percentile(np.abs(self.list_pose[..., 3]), 90, axis=0)
+                self.poses_test = create_spiral_poses(radii, focus_depth,n_poses=120)
 
     def __len__(self):
         if self.split == 'train':
             return len(self.all_rays)
         if self.split == 'val':
             return self.val_num
-        # if self.split == 'test_train':
-        #     return len(self.poses)
-        return len(self.all_rays)
+        if self.split == 'test_train':
+            return len(self.list_pose)
+        return len(self.poses_test)
 
     def __getitem__(self, idx):
 
@@ -92,8 +139,14 @@ class CarlaDataset(Dataset):
                       'rgbs': self.all_rgbs[idx]}
 
             return sample
-        elif self.split == 'val':
-            c2w = torch.FloatTensor(self.list_pose[self.val_idx])
+        else:
+            if self.split == 'val':
+                c2w = torch.FloatTensor(self.list_pose[self.val_idx])
+            elif self.split == 'test_train':
+                c2w = torch.FloatTensor(self.list_pose[idx])
+            else:
+                c2w = torch.FloatTensor(self.poses_test[idx])
+
             rays_o, rays_d = get_rays(self.directions, c2w)
 
             if not self.spheric_poses:
@@ -111,8 +164,11 @@ class CarlaDataset(Dataset):
             sample = {'rays': rays,
                       'c2w': c2w}
 
-            img = self.list_data[self.val_idx]['rgb'].view(3, -1).permute(1, 0)
-            sample['rgbs'] = img
+            if self.split in ['val', 'test_train']:
+                if self.split == 'val':
+                    idx = self.val_idx
+                img = self.list_data[idx]['rgb'].view(3, -1).permute(1, 0)
+                sample['rgbs'] = img
 
             return sample
 

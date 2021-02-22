@@ -246,5 +246,6 @@ dmypy.json
 /checkpoints
 /ckpts
 /visuals
+/results
 
 
