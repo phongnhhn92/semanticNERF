@@ -80,7 +80,7 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
 
-    def inference(results, model, typ, xyz, z_vals, test_time=False, **kwargs):
+    def inference(results, model, typ, xyz, z_vals, segs, test_time=False, **kwargs):
         """
         Helper function that performs model inference.
         Inputs:
@@ -117,10 +117,13 @@ def render_rays(models,
         else: # infer rgb and sigma and others
             dir_embedded_ = repeat(dir_embedded, 'n1 c -> (n1 n2) c', n2=N_samples_)
                             # (N_rays*N_samples_, embed_dir_channels)
+            segs_ = repeat(segs, 'n1 c -> (n1 n2) c', n2=N_samples_)
+            # (N_rays*N_samples_, 13)
             for i in range(0, B, chunk):
                 xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
                 xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded_[i:i+chunk]], 1)
+                                             dir_embedded_[i:i+chunk],
+                                             segs_[i:i+chunk]], 1)
                 out_chunks += [model(xyzdir_embedded, sigma_only=False)]
 
             out = torch.cat(out_chunks, 0)
@@ -198,7 +201,7 @@ def render_rays(models,
     xyz_coarse = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
     results = {}
-    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, test_time, **kwargs)
+    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, segs, test_time, **kwargs)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
@@ -211,6 +214,6 @@ def render_rays(models,
 
         xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
-        inference(results, models['fine'], 'fine', xyz_fine, z_vals, test_time, **kwargs)
+        inference(results, models['fine'], 'fine', xyz_fine, z_vals, segs,test_time, **kwargs)
 
     return results

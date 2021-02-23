@@ -41,7 +41,9 @@ class Embedding(nn.Module):
 class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
-                 in_channels_xyz=63, in_channels_dir=27, 
+                 in_channels_xyz=63, in_channels_dir=27,
+                 seg_classes = 13,
+                 seg_layers = 2,
                  skips=[4]):
         """
         D: number of layers for density (sigma) encoder
@@ -55,12 +57,25 @@ class NeRF(nn.Module):
         self.W = W
         self.in_channels_xyz = in_channels_xyz
         self.in_channels_dir = in_channels_dir
+        self.seg_classes = seg_classes
+        self.seg_layers = seg_layers
         self.skips = skips
+
+        #Semantic encoding layer
+        for j in range(self.seg_layers):
+            if j == 0:
+                layer = nn.Linear(self.seg_classes, W)
+            else:
+                layer = nn.Linear(W, W)
+            layer = nn.Sequential(layer, nn.ReLU(True))
+            setattr(self, f"seg_encoding_{j + 1}", layer)
 
         # xyz encoding layers
         for i in range(D):
             if i == 0:
                 layer = nn.Linear(in_channels_xyz, W)
+            elif i ==1:
+                layer = nn.Linear(W*2, W)
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
             else:
@@ -98,15 +113,21 @@ class NeRF(nn.Module):
                 out: (B, 4), rgb and sigma
         """
         if not sigma_only:
-            input_xyz, input_dir = \
-                torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
+            input_xyz, input_dir, input_seg = \
+                torch.split(x, [self.in_channels_xyz, self.in_channels_dir,self.seg_classes], dim=-1)
         else:
             input_xyz = x
+
+        seg = input_seg
+        for j in range(self.seg_layers):
+            seg = getattr(self,f'seg_encoding_{j+1}')(seg)
 
         xyz_ = input_xyz
         for i in range(self.D):
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
+            if i == 1:
+                xyz_ = torch.cat([xyz_,seg],-1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma = self.sigma(xyz_)

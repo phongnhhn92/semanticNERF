@@ -91,7 +91,7 @@ class CarlaDataset(Dataset):
         self.list_data = []
         self.all_rgbs = []
         self.all_segs = []
-
+        self.all_segs_onehot = []
         for i in range(n):
             for j in range(n):
                 data = read_cam(self.root_dir, i, j)
@@ -104,13 +104,16 @@ class CarlaDataset(Dataset):
                 img = data['rgb'].view(3, -1).permute(1, 0)
 
                 # Semantic value from 0-12 -> 13 classes
-                semantic = data['sem'].unsqueeze(0)
-                semantic = semantic.long()
-                semantic = one_hot_encoding(semantic,C = self.classes).squeeze(0)
-                semantic = semantic.view(self.classes,-1).permute(1,0)
+                semantic_ = data['sem'].unsqueeze(0)
+                semantic_ = semantic_.long()
+                semantic_ = one_hot_encoding(semantic_,C = self.classes).squeeze(0)
+                semantic_ = semantic_.view(self.classes,-1).permute(1,0)
+
+                semantic = data['sem'].view(1,-1).permute(1,0)
 
                 self.all_rgbs += [img]
                 self.all_segs += [semantic]
+                self.all_segs_onehot += [semantic_]
                 self.list_pose.append(pose)
 
         self.list_pose = torch.stack(self.list_pose)
@@ -148,6 +151,7 @@ class CarlaDataset(Dataset):
             self.all_rays = torch.cat(self.all_rays, 0)  # ((N_images-1)*h*w, 8)
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
             self.all_segs = torch.cat(self.all_segs, 0)  # ((N_images-1)*h*w, 1)
+            self.all_segs_onehot = torch.cat(self.all_segs_onehot, 0)  # ((N_images-1)*h*w, 1)
         elif self.split == 'val':
             print('val image number is', n ** 2 // 2)
             self.val_idx = n ** 2 // 2
@@ -186,7 +190,8 @@ class CarlaDataset(Dataset):
         if self.split == 'train':  # use data in the buffers
             sample = {'rays': self.all_rays[idx],
                       'rgbs': self.all_rgbs[idx],
-                      'segs': self.all_segs[idx]}
+                      'segs': self.all_segs[idx],
+                      'segs_onehot': self.all_segs_onehot[idx]}
 
             return sample
         else:

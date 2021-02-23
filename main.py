@@ -101,8 +101,10 @@ class NeRFSystem(LightningModule):
                           pin_memory=True)
     
     def training_step(self, batch, batch_nb):
-        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs']
-        results = self(rays,segs)
+        rays, rgbs, segs, segs_onehot = batch['rays'], batch['rgbs'], \
+                                        batch['segs'], batch['segs_onehot']
+
+        results = self(rays,segs_onehot)
         loss = self.loss(results, rgbs)
 
         with torch.no_grad():

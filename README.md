@@ -46,3 +46,8 @@ Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DAp
 
 18-02-2020: add another feature vector as output of NERF for semantic prediction.
 ![](/images/img.png "Ideas")
+
+23-02-2020: Add one hot semantic as additional input to NERF. Train significantly faster.
+However, the drawback is that we need semantic as input. Can we train a latent feature vector that understand the semantic so that we dont need semantic input but still output the semantic results ?
+Later, when we use edited semantic input the output might change robustly.
+![](/images/ideas_23-02-2020.jpg "Ideas")
