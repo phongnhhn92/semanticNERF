@@ -1,6 +1,6 @@
 # semanticNERF
 
-#### 13-02-2020:
+#### 23-02-2020:
 Starting point: Add one-hot semantic in dataloader. Discuss about the architecture today with Teddy.
 
 #### Dataset:
