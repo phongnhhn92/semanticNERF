@@ -2,6 +2,7 @@ from .carla_utils.utils import *
 from torchvision import transforms as T
 from torch.utils.data import Dataset
 from .ray_utils import *
+import torch.nn.functional as F
 
 def normalize(v):
     """Normalize a vector."""
@@ -41,8 +42,28 @@ def create_spiral_poses(radii, focus_depth, n_poses=120):
 
     return np.stack(poses_spiral, 0)  # (n_poses, 3, 4)
 
+def one_hot_encoding(labels, C):
+    '''
+    Converts an integer label torch.autograd.Variable to a one-hot Variable.
+    Parameters
+    ----------
+    labels : torch.autograd.Variable of torch.cuda.LongTensor
+        N x 1 x H x W, where N is batch size.
+        Each value is an integer representing correct classification.
+    C : integer.
+        number of classes in labels.
+    Returns
+    -------
+    target : torch.autograd.Variable of torch.cuda.FloatTensor
+        N x C x H x W, where C is class number. One-hot encoded.
+    '''
+    one_hot = torch.FloatTensor(labels.size(0), C, labels.size(2), labels.size(3)).to(labels.device).zero_()
+    target = one_hot.scatter_(1, labels.data, 1)
+
+    return target
+
 class CarlaDataset(Dataset):
-    def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1):
+    def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1,classes = 13):
         """
         spheric_poses: whether the images are taken in a spheric inward-facing manner
                        default: False (forward-facing)
@@ -53,6 +74,7 @@ class CarlaDataset(Dataset):
         self.img_wh = img_wh
         self.spheric_poses = spheric_poses
         self.val_num = max(1, val_num)
+        self.classes = classes
 
         # For rendering
         self.type = 'spiral'
@@ -65,13 +87,14 @@ class CarlaDataset(Dataset):
 
     def read_meta(self):
         n = 7  # 7x7 light field camera
-        data_path = self.root_dir
         self.list_pose = []
-        self.all_rgbs = []
         self.list_data = []
+        self.all_rgbs = []
+        self.all_segs = []
+
         for i in range(n):
             for j in range(n):
-                data = read_cam(data_path, i, j)
+                data = read_cam(self.root_dir, i, j)
                 self.list_data.append(data)
                 # Get focal length, all images share same focal length
                 if i == 0 and i == 0:
@@ -79,8 +102,17 @@ class CarlaDataset(Dataset):
 
                 pose = data['pose']
                 img = data['rgb'].view(3, -1).permute(1, 0)
+
+                # Semantic value from 0-12 -> 13 classes
+                semantic = data['sem'].unsqueeze(0)
+                semantic = semantic.long()
+                semantic = one_hot_encoding(semantic,C = self.classes).squeeze(0)
+                semantic = semantic.view(self.classes,-1).permute(1,0)
+
                 self.all_rgbs += [img]
+                self.all_segs += [semantic]
                 self.list_pose.append(pose)
+
         self.list_pose = torch.stack(self.list_pose)
 
         # ray directions for all pixels, same for all images (same H, W, focal)
@@ -111,9 +143,11 @@ class CarlaDataset(Dataset):
                                              far * torch.ones_like(rays_o[:, :1])],
                                             1)]  # (h*w, 8)
 
-            assert len(self.all_rays) != self.all_rgbs, 'Mismatch number of rays and rgb'
+            assert len(self.all_rays) == len(self.all_rgbs) and len(self.all_rgbs) == len(self.all_segs), \
+                'Mismatch number of rays and rgb'
             self.all_rays = torch.cat(self.all_rays, 0)  # ((N_images-1)*h*w, 8)
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
+            self.all_segs = torch.cat(self.all_segs, 0)  # ((N_images-1)*h*w, 1)
         elif self.split == 'val':
             print('val image number is', n ** 2 // 2)
             self.val_idx = n ** 2 // 2
@@ -151,7 +185,8 @@ class CarlaDataset(Dataset):
 
         if self.split == 'train':  # use data in the buffers
             sample = {'rays': self.all_rays[idx],
-                      'rgbs': self.all_rgbs[idx]}
+                      'rgbs': self.all_rgbs[idx],
+                      'segs': self.all_segs[idx]}
 
             return sample
         else:

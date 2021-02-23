@@ -50,6 +50,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 def render_rays(models,
                 embeddings,
                 rays,
+                segs,
                 N_samples=64,
                 use_disp=False,
                 perturb=0,
