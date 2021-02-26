@@ -17,11 +17,11 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
         samples: the sampled samples
     """
     N_rays, N_samples_ = weights.shape
-    weights = weights + eps # prevent division by zero (don't do inplace op!)
-    pdf = weights / reduce(weights, 'n1 n2 -> n1 1', 'sum') # (N_rays, N_samples_)
-    cdf = torch.cumsum(pdf, -1) # (N_rays, N_samples), cumulative distribution function
-    cdf = torch.cat([torch.zeros_like(cdf[: ,:1]), cdf], -1)  # (N_rays, N_samples_+1) 
-                                                               # padded to 0~1 inclusive
+    weights = weights + eps  # prevent division by zero (don't do inplace op!)
+    pdf = weights / reduce(weights, 'n1 n2 -> n1 1', 'sum')  # (N_rays, N_samples_)
+    cdf = torch.cumsum(pdf, -1)  # (N_rays, N_samples), cumulative distribution function
+    cdf = torch.cat([torch.zeros_like(cdf[:, :1]), cdf], -1)  # (N_rays, N_samples_+1)
+    # padded to 0~1 inclusive
 
     if det:
         u = torch.linspace(0, 1, N_importance, device=bins.device)
@@ -31,32 +31,31 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
     u = u.contiguous()
 
     inds = torch.searchsorted(cdf, u, right=True)
-    below = torch.clamp_min(inds-1, 0)
+    below = torch.clamp_min(inds - 1, 0)
     above = torch.clamp_max(inds, N_samples_)
 
     inds_sampled = rearrange(torch.stack([below, above], -1), 'n1 n2 c -> n1 (n2 c)', c=2)
     cdf_g = rearrange(torch.gather(cdf, 1, inds_sampled), 'n1 (n2 c) -> n1 n2 c', c=2)
     bins_g = rearrange(torch.gather(bins, 1, inds_sampled), 'n1 (n2 c) -> n1 n2 c', c=2)
 
-    denom = cdf_g[...,1]-cdf_g[...,0]
-    denom[denom<eps] = 1 # denom equals 0 means a bin has weight 0,
-                         # in which case it will not be sampled
-                         # anyway, therefore any value for it is fine (set to 1 here)
+    denom = cdf_g[..., 1] - cdf_g[..., 0]
+    denom[denom < eps] = 1  # denom equals 0 means a bin has weight 0,
+    # in which case it will not be sampled
+    # anyway, therefore any value for it is fine (set to 1 here)
 
-    samples = bins_g[...,0] + (u-cdf_g[...,0])/denom * (bins_g[...,1]-bins_g[...,0])
+    samples = bins_g[..., 0] + (u - cdf_g[..., 0]) / denom * (bins_g[..., 1] - bins_g[..., 0])
     return samples
 
 
 def render_rays(models,
                 embeddings,
                 rays,
-                segs,
                 N_samples=64,
                 use_disp=False,
                 perturb=0,
                 noise_std=1,
                 N_importance=0,
-                chunk=1024*32,
+                chunk=1024 * 32,
                 white_back=False,
                 test_time=False,
                 **kwargs
@@ -80,7 +79,7 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
 
-    def inference(results, model, typ, xyz, z_vals, segs, test_time=False, **kwargs):
+    def inference(results, model, typ, xyz, z_vals, test_time=False, **kwargs):
         """
         Helper function that performs model inference.
         Inputs:
@@ -102,69 +101,88 @@ def render_rays(models,
                 weights: (N_rays, N_samples_): weights of each sample
         """
         N_samples_ = xyz.shape[1]
-        xyz_ = rearrange(xyz, 'n1 n2 c -> (n1 n2) c') # (N_rays*N_samples_, 3)
+        xyz_ = rearrange(xyz, 'n1 n2 c -> (n1 n2) c')  # (N_rays*N_samples_, 3)
 
         # Perform model inference to get rgb and raw sigma
         B = xyz_.shape[0]
         out_chunks = []
-        if typ=='coarse' and test_time and 'fine' in models:
+        if typ == 'coarse' and test_time and 'fine' in models:
             for i in range(0, B, chunk):
-                xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
+                xyz_embedded = embedding_xyz(xyz_[i:i + chunk])
                 out_chunks += [model(xyz_embedded, sigma_only=True)]
 
             out = torch.cat(out_chunks, 0)
-            sigmas = rearrange(out, '(n1 n2) 1 -> n1 n2', n1=N_rays, n2=N_samples_)
-        else: # infer rgb and sigma and others
+            sigmas_color,sigmas_segs =torch.split(out,[1,1],-1)
+            sigmas_color = rearrange(sigmas_color, '(n1 n2) 1 -> n1 n2', n1=N_rays, n2=N_samples_)
+            sigmas_segs = rearrange(sigmas_segs, '(n1 n2) 1 -> n1 n2', n1=N_rays, n2=N_samples_)
+        else:  # infer rgb and sigma and others
             dir_embedded_ = repeat(dir_embedded, 'n1 c -> (n1 n2) c', n2=N_samples_)
-                            # (N_rays*N_samples_, embed_dir_channels)
-            segs_ = repeat(segs, 'n1 c -> (n1 n2) c', n2=N_samples_)
-            # (N_rays*N_samples_, 13)
+            # (N_rays*N_samples_, embed_dir_channels)
             for i in range(0, B, chunk):
-                xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
+                xyz_embedded = embedding_xyz(xyz_[i:i + chunk])
                 xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded_[i:i+chunk],
-                                             segs_[i:i+chunk]], 1)
+                                             dir_embedded_[i:i + chunk]], 1)
                 out_chunks += [model(xyzdir_embedded, sigma_only=False)]
 
             out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
-            out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=4)
-            rgbs = out[..., :3] # (N_rays, N_samples_, 3)
-            sigmas = out[..., 3] # (N_rays, N_samples_)
-            
+            out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=out.shape[-1])
+            rgbs, sigmas_color, segs, sigmas_segs = torch.split(out, [3, 1, 13, 1], dim=-1)
+            sigmas_color = sigmas_color.squeeze(-1)
+            sigmas_segs = sigmas_segs.squeeze(-1)
+
         # Convert these values using volume rendering (Section 4)
-        deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
-        delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
+        deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+        delta_inf = 1e10 * torch.ones_like(deltas[:, :1])  # (N_rays, 1) the last delta is infinity
         deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
 
+        # For color
         # compute alpha by the formula (3)
-        noise = torch.randn_like(sigmas) * noise_std
-        alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
+        noise = torch.randn_like(sigmas_color) * noise_std
+        alphas = 1 - torch.exp(-deltas * torch.relu(sigmas_color + noise))  # (N_rays, N_samples_)
 
         # softplus: f(x) = ln(1+e^x)
-        #alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
+        # alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
 
         alphas_shifted = \
-            torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, 1-a1, 1-a2, ...]
+            torch.cat([torch.ones_like(alphas[:, :1]), 1 - alphas + 1e-10], -1)  # [1, 1-a1, 1-a2, ...]
         weights = \
-            alphas * torch.cumprod(alphas_shifted[:, :-1], -1) # (N_rays, N_samples_)
-        weights_sum = reduce(weights, 'n1 n2 -> n1', 'sum') # (N_rays), the accumulated opacity along the rays
-                                                            # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
+            alphas * torch.cumprod(alphas_shifted[:, :-1], -1)  # (N_rays, N_samples_)
+        weights_sum = reduce(weights, 'n1 n2 -> n1', 'sum')  # (N_rays), the accumulated opacity along the rays
+        # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
+
+        # For semantic
+        # compute alpha by the formula (3)
+        noise_ = torch.randn_like(sigmas_segs) * noise_std
+        alphas_ = 1 - torch.exp(-deltas * torch.relu(sigmas_segs + noise_))  # (N_rays, N_samples_)
+
+        alphas_shifted_ = \
+                torch.cat([torch.ones_like(alphas_[:, :1]), 1 - alphas_ + 1e-10], -1)  # [1, 1-a1, 1-a2, ...]
+        weights_ = \
+                alphas_ * torch.cumprod(alphas_shifted_[:, :-1], -1)  # (N_rays, N_samples_)
 
         results[f'weights_{typ}'] = weights
         results[f'opacity_{typ}'] = weights_sum
         results[f'z_vals_{typ}'] = z_vals
+
+        if test_time:
+            depth_map_ = reduce(weights_ * z_vals, 'n1 n2 -> n1', 'sum')
+            results[f'depth_seg_{typ}'] = depth_map_
         if test_time and typ == 'coarse' and 'fine' in models:
             return
 
-        rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1')*rgbs, 'n1 n2 c -> n1 c', 'sum')
-        depth_map = reduce(weights*z_vals, 'n1 n2 -> n1', 'sum')
+        rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1') * rgbs, 'n1 n2 c -> n1 c', 'sum')
+        depth_map = reduce(weights * z_vals, 'n1 n2 -> n1', 'sum')
+        seg_map = reduce(rearrange(weights_, 'n1 n2 -> n1 n2 1') * segs, 'n1 n2 c -> n1 c', 'sum')
+
 
         if white_back:
-            rgb_map += 1-weights_sum.unsqueeze(1)
+            rgb_map += 1 - weights_sum.unsqueeze(1)
 
         results[f'rgb_{typ}'] = rgb_map
         results[f'depth_{typ}'] = depth_map
+        results[f'seg_{typ}'] = seg_map
+
 
         return
 
@@ -172,48 +190,48 @@ def render_rays(models,
 
     # Decompose the inputs
     N_rays = rays.shape[0]
-    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6] # both (N_rays, 3)
-    near, far = rays[:, 6:7], rays[:, 7:8] # both (N_rays, 1)
+    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
+    near, far = rays[:, 6:7], rays[:, 7:8]  # both (N_rays, 1)
     # Embed direction
-    dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d)) # (N_rays, embed_dir_channels)
+    dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d))  # (N_rays, embed_dir_channels)
 
     rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
     rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
 
     # Sample depth points
-    z_steps = torch.linspace(0, 1, N_samples, device=rays.device) # (N_samples)
-    if not use_disp: # use linear sampling in depth space
-        z_vals = near * (1-z_steps) + far * z_steps
-    else: # use linear sampling in disparity space
-        z_vals = 1/(1/near * (1-z_steps) + 1/far * z_steps)
+    z_steps = torch.linspace(0, 1, N_samples, device=rays.device)  # (N_samples)
+    if not use_disp:  # use linear sampling in depth space
+        z_vals = near * (1 - z_steps) + far * z_steps
+    else:  # use linear sampling in disparity space
+        z_vals = 1 / (1 / near * (1 - z_steps) + 1 / far * z_steps)
 
     z_vals = z_vals.expand(N_rays, N_samples)
-    
-    if perturb > 0: # perturb sampling depths (z_vals)
-        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
+
+    if perturb > 0:  # perturb sampling depths (z_vals)
+        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
         # get intervals between samples
-        upper = torch.cat([z_vals_mid, z_vals[: ,-1:]], -1)
-        lower = torch.cat([z_vals[: ,:1], z_vals_mid], -1)
-        
+        upper = torch.cat([z_vals_mid, z_vals[:, -1:]], -1)
+        lower = torch.cat([z_vals[:, :1], z_vals_mid], -1)
+
         perturb_rand = perturb * torch.rand_like(z_vals)
         z_vals = lower + (upper - lower) * perturb_rand
 
     xyz_coarse = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
     results = {}
-    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, segs, test_time, **kwargs)
+    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, test_time, **kwargs)
 
-    if N_importance > 0: # sample points for fine model
-        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
+    if N_importance > 0:  # sample points for fine model
+        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
         z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].clone().detach(),
-                             N_importance, det=(perturb==0))
-                  # detach so that grad doesn't propogate to weights_coarse from here
+                             N_importance, det=(perturb == 0))
+        # detach so that grad doesn't propogate to weights_coarse from here
 
         z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
-                 # combine coarse and fine samples
+        # combine coarse and fine samples
 
         xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
-        inference(results, models['fine'], 'fine', xyz_fine, z_vals, segs,test_time, **kwargs)
+        inference(results, models['fine'], 'fine', xyz_fine, z_vals, test_time, **kwargs)
 
     return results

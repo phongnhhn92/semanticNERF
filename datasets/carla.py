@@ -151,7 +151,7 @@ class CarlaDataset(Dataset):
             self.all_rays = torch.cat(self.all_rays, 0)  # ((N_images-1)*h*w, 8)
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
             self.all_segs = torch.cat(self.all_segs, 0)  # ((N_images-1)*h*w, 1)
-            self.all_segs_onehot = torch.cat(self.all_segs_onehot, 0)  # ((N_images-1)*h*w, 1)
+            self.all_segs_onehot = torch.cat(self.all_segs_onehot, 0)  # ((N_images-1)*h*w, 13)
         elif self.split == 'val':
             print('val image number is', n ** 2 // 2)
             self.val_idx = n ** 2 // 2
@@ -223,7 +223,9 @@ class CarlaDataset(Dataset):
                 if self.split == 'val':
                     idx = self.val_idx
                 img = self.list_data[idx]['rgb'].view(3, -1).permute(1, 0)
+                seg = self.all_segs[idx]
                 sample['rgbs'] = img
+                sample['segs'] = seg
 
             return sample
 

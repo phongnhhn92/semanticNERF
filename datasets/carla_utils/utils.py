@@ -4,6 +4,95 @@ import cv2 as cv
 from PIL import Image
 import torch.nn.functional as F
 
+carla_pallete = {
+    0: [0, 0, 0],  # None
+    1: [70, 70, 70],  # Buildings
+    2: [190, 153, 153],  # Fences
+    3: [72, 0, 90],  # Other
+    4: [220, 20, 60],  # Pedestrians
+    5: [153, 153, 153],  # Poles
+    6: [157, 234, 50],  # RoadLines
+    7: [128, 64, 128],  # Roads
+    8: [244, 35, 232],  # Sidewalks
+    9: [107, 142, 35],  # Vegetation
+    10: [0, 0, 255],  # Vehicles
+    11: [102, 102, 156],  # Walls
+    12: [220, 220, 0],  # TrafficSigns
+    13: [150, 33, 88],  # TrafficSigns
+    14: [111, 74,  0],
+    15: [81, 0, 81],
+    16: [250, 170, 160],
+    17: [230, 150, 140],
+    18: [180, 165, 180],
+    19: [150, 100, 100],
+    20: [150, 120, 90],
+    21: [250, 170, 30],
+    22: [220, 220,  0],
+    23: [152, 251, 152],
+    24: [70, 130, 180],
+    25: [255, 0, 0],
+    26: [0, 0, 142],
+    27: [0, 0, 70],
+    28: [0, 60, 100],
+    29: [0, 0, 110],
+    20: [0, 80, 100],
+    31: [0, 0, 230],
+    32: [119, 11, 32],
+}
+
+def get_palette(dataset_name):
+    pallet_map = {}
+    pallet_map['carla'] = carla_pallete
+    assert dataset_name in pallet_map.keys(
+    ), f'Unknown dataset {dataset_name}: not in {pallet_map.keys()} '
+    return pallet_map[dataset_name]
+
+def get_num_classes(dataset_name):
+    num_classes_map = {}
+    num_classes_map['carla'] = 13
+    # num_classes_map['scan_net'] = 13
+    # num_classes_map['scenenet_rgbd'] = 14
+    num_classes_map['vkitti'] = 16
+    num_classes_map['cityscapes'] = 20
+    assert dataset_name in num_classes_map.keys(
+    ), f'Unknown dataset {dataset_name}: not in {num_classes_map.keys()} '
+    return num_classes_map[dataset_name]
+
+class SaveSemantics:
+    '''
+    Currently supports the following datasets
+    ['carla', 'vkitti', 'cityscapes']
+    '''
+
+    def __init__(self, dataset_name):
+        self.dataset_name = dataset_name
+        self.num_classes = get_num_classes(dataset_name)
+        self.pallete = get_palette(dataset_name)
+
+    def __call__(self, input_seg, file_name):
+        input_seg = input_seg.squeeze()
+        assert input_seg.ndimension(
+        ) == 2, 'input segmentation should be either [H, W] or [1, H, W]'
+        self.save_lable(input_seg, file_name)
+
+    def to_color(self, input_seg):
+        assert self.num_classes > input_seg.max(), 'Segmentaion mask > num_classes'
+        input_seg = input_seg.int().squeeze().numpy()
+        seg_mask = np.asarray(input_seg, dtype=np.uint8)
+        pil_im = Image.fromarray(seg_mask, mode="P")
+        pallette_ = []
+        for v in self.pallete.values():
+            pallette_.extend(v)
+        for _i in range(len(self.pallete.keys()), 256):
+            pallette_.extend([0, 0, 0])
+        pil_im.putpalette(pallette_)
+        pil_np = np.asarray(pil_im.convert('RGB'), dtype=np.uint8)
+        return pil_np
+
+    def save_lable(self, input_seg, file_name):
+        col_img = self.to_color(input_seg)
+        pil_im = Image.fromarray(col_img)
+        pil_im.save(file_name)
 
 def get_k(fov=90.0, height=600, width=800):
     k = np.identity(3)

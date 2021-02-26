@@ -61,27 +61,35 @@ class NeRF(nn.Module):
         self.seg_layers = seg_layers
         self.skips = skips
 
-        #Semantic encoding layer
-        for j in range(self.seg_layers):
-            if j == 0:
-                layer = nn.Linear(self.seg_classes, W)
-            else:
-                layer = nn.Linear(W, W)
-            layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"seg_encoding_{j + 1}", layer)
+        # #Semantic encoding layer
+        # for j in range(self.seg_layers):
+        #     if j == 0:
+        #         layer = nn.Linear(self.seg_classes, W)
+        #     else:
+        #         layer = nn.Linear(W, W)
+        #     layer = nn.Sequential(layer, nn.ReLU(True))
+        #     setattr(self, f"seg_encoding_{j + 1}", layer)
 
         # xyz encoding layers
         for i in range(D):
             if i == 0:
                 layer = nn.Linear(in_channels_xyz, W)
-            elif i ==1:
-                layer = nn.Linear(W*2, W)
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))
             setattr(self, f"xyz_encoding_{i+1}", layer)
+
+        for i in range(D // 2):
+            if i == 0:
+                layer = nn.Linear(in_channels_xyz, W)
+            else:
+                layer = nn.Linear(W, W)
+            layer = nn.Sequential(layer, nn.ReLU(True))
+            setattr(self, f"feature_encoding_{i + 1}", layer)
+
+
         self.xyz_encoding_final = nn.Linear(W, W)
 
         # direction encoding layers
@@ -90,7 +98,9 @@ class NeRF(nn.Module):
                                 nn.ReLU(True))
 
         # output layers
-        self.sigma = nn.Linear(W, 1)
+        self.sigma_color = nn.Linear(W, 1)
+        self.sigma_feature = nn.Linear(W, 1)
+        self.feature = nn.Linear(W, self.seg_classes)
         self.rgb = nn.Sequential(
                         nn.Linear(W//2, 3),
                         nn.Sigmoid())
@@ -113,26 +123,28 @@ class NeRF(nn.Module):
                 out: (B, 4), rgb and sigma
         """
         if not sigma_only:
-            input_xyz, input_dir, input_seg = \
-                torch.split(x, [self.in_channels_xyz, self.in_channels_dir,self.seg_classes], dim=-1)
+            input_xyz, input_dir = \
+                torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
         else:
             input_xyz = x
-
-        seg = input_seg
-        for j in range(self.seg_layers):
-            seg = getattr(self,f'seg_encoding_{j+1}')(seg)
 
         xyz_ = input_xyz
         for i in range(self.D):
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
-            if i == 1:
-                xyz_ = torch.cat([xyz_,seg],-1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
-        sigma = self.sigma(xyz_)
+        sigma_color = self.sigma_color(xyz_)
+
+        xyz_feature = input_xyz
+        for i in range(self.D//2):
+            xyz_feature = getattr(self, f"feature_encoding_{i+1}")(xyz_feature)
+
+        sigma_feature = self.sigma_color(xyz_feature)
+        seg = self.feature(xyz_feature)
+
         if sigma_only:
-            return sigma
+            return torch.cat([sigma_color,sigma_feature],-1)
 
         xyz_encoding_final = self.xyz_encoding_final(xyz_)
 
@@ -140,6 +152,6 @@ class NeRF(nn.Module):
         dir_encoding = self.dir_encoding(dir_encoding_input)
         rgb = self.rgb(dir_encoding)
 
-        out = torch.cat([rgb, sigma], -1)
+        out = torch.cat([rgb, sigma_color,seg, sigma_feature], -1)
 
         return out

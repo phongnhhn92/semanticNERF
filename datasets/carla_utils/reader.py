@@ -1,6 +1,6 @@
 import torch,argparse
 import torchvision
-from .utils import *
+from utils import *
 
 def get_opts():
     parser = argparse.ArgumentParser()
@@ -20,6 +20,12 @@ if __name__ == '__main__':
     data_path = hparams.root_dir
     cam_a = read_cam(data_path, 3, 3)
     cam_b = read_cam(data_path, 5, 5)
+
+    # Save semantic from index-based semantic
+    save_sem = SaveSemantics('carla')
+    sem_a = cam_a['sem']
+    out_sem_a = save_sem.to_color(sem_a)
+    save_sem(sem_a,'output_semantic.png')
 
     cam_a = {k:v.unsqueeze(0).to(device) for k,v in cam_a.items()}
     cam_b = {k:v.unsqueeze(0).to(device) for k,v in cam_b.items()}

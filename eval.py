@@ -14,6 +14,7 @@ import metrics
 
 from datasets import dataset_dict
 from datasets.depth_utils import *
+from datasets.carla_utils.utils import *
 
 torch.backends.cudnn.benchmark = True
 
@@ -47,7 +48,7 @@ def get_opts():
     parser.add_argument('--ckpt_path', type=str, required=True,
                         help='pretrained checkpoint path to load')
 
-    parser.add_argument('--save_depth', default=False, action="store_true",
+    parser.add_argument('--save_depth', default=True, action="store_true",
                         help='whether to save depth prediction')
     parser.add_argument('--depth_format', type=str, default='pfm',
                         choices=['pfm', 'bytes'],
@@ -111,7 +112,7 @@ if __name__ == "__main__":
         nerf_fine.cuda().eval()
         models['fine'] = nerf_fine
 
-    imgs, depth_maps, psnrs = [], [], []
+    imgs, segs ,depth_maps, depth_maps_seg, psnrs = [], [], [], [], []
     dir_name = f'results/{args.dataset_name}/{args.scene_name}'
     os.makedirs(dir_name, exist_ok=True)
 
@@ -125,6 +126,14 @@ if __name__ == "__main__":
 
         img_pred = np.clip(results[f'rgb_{typ}'].view(h, w, 3).cpu().numpy(), 0, 1)
 
+        seg_pred = results[f'seg_{typ}'].cpu()
+        seg_pred = torch.softmax(seg_pred, dim=1)
+        seg_pred = torch.argmax(seg_pred, dim=1).view(h, w).unsqueeze(0)  # (1,H,W)
+        save_semantic = SaveSemantics('carla')
+        save_semantic(seg_pred,os.path.join(dir_name, f'seg_{i:03d}.png'))
+        seg_pred = save_semantic.to_color(seg_pred)
+        segs += [seg_pred]
+
         if args.save_depth:
             depth_pred = results[f'depth_{typ}'].view(h, w).cpu().numpy()
             depth_maps += [depth_pred]
@@ -132,6 +141,14 @@ if __name__ == "__main__":
                 save_pfm(os.path.join(dir_name, f'depth_{i:03d}.pfm'), depth_pred)
             else:
                 with open(f'depth_{i:03d}', 'wb') as f:
+                    f.write(depth_pred.tobytes())
+
+            depth_pred = results[f'depth_seg_{typ}'].view(h, w).cpu().numpy()
+            depth_maps_seg += [depth_pred]
+            if args.depth_format == 'pfm':
+                save_pfm(os.path.join(dir_name, f'depth_seg_{i:03d}.pfm'), depth_pred)
+            else:
+                with open(f'depth_seg_{i:03d}', 'wb') as f:
                     f.write(depth_pred.tobytes())
 
         img_pred_ = (img_pred * 255).astype(np.uint8)
@@ -144,13 +161,16 @@ if __name__ == "__main__":
             psnrs += [metrics.psnr(img_gt, img_pred).item()]
 
     imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}.gif'), imgs, fps=30)
+    imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_semantic.gif'), segs, fps=30)
 
     if args.save_depth:
-        min_depth = np.min(depth_maps)
-        max_depth = np.max(depth_maps)
         depth_imgs = (depth_maps - np.min(depth_maps)) / (max(np.max(depth_maps) - np.min(depth_maps), 1e-8))
         depth_imgs_ = [cv2.applyColorMap((img * 255).astype(np.uint8), cv2.COLORMAP_JET) for img in depth_imgs]
         imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_depth.gif'), depth_imgs_, fps=30)
+
+        depth_imgs = (depth_maps_seg - np.min(depth_maps_seg)) / (max(np.max(depth_maps_seg) - np.min(depth_maps_seg), 1e-8))
+        depth_imgs_ = [cv2.applyColorMap((img * 255).astype(np.uint8), cv2.COLORMAP_JET) for img in depth_imgs]
+        imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_depth_seg.gif'), depth_imgs_, fps=30)
 
     if psnrs:
         mean_psnr = np.mean(psnrs)
