@@ -16,7 +16,7 @@ Semantic output
 Depth predicted by color density (sigma_c)
 ![](/images/dual_path_depth.gif "Ideas")
 
-Depth predicted by color density (sigma_s)
+Depth predicted by sematic density (sigma_s)
 ![](/images/dual_path_depth_seg.gif "Ideas")
 
 
