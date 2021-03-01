@@ -77,8 +77,9 @@ class CarlaDataset(Dataset):
         self.classes = classes
 
         # For rendering
-        self.type = 'spiral'
-        #self.type = 'horizontal'
+        #self.type = 'spiral'
+        self.type = 'horizontal'
+        #self.type = 'forward'
 
         assert self.split != 'train' or self.split != 'val', 'Not implemented yet'
         self.define_transforms()
@@ -172,6 +173,15 @@ class CarlaDataset(Dataset):
                     for a in arr:
                         temp_p = self.list_pose[0].clone()
                         temp_p[0,3] = a
+                        self.poses_test.append(temp_p)
+                    self.poses_test = torch.stack(self.poses_test)
+                elif self.type == 'forward':
+                    # Hard-coded since we know the x axis span between -0.3 and 0.3
+                    arr = np.linspace(0, -10, 50)
+                    self.poses_test = []
+                    for a in arr:
+                        temp_p = self.list_pose[0].clone()
+                        temp_p[2,3] = a
                         self.poses_test.append(temp_p)
                     self.poses_test = torch.stack(self.poses_test)
 
