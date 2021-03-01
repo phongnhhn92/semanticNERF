@@ -1,5 +1,10 @@
 # semanticNERF
 
+## ERROR:
+Wrong layer to fix later.
+https://github.com/phongnhhn92/semanticNERF/blob/2365a6e9a4ead702e5f1f7638019b79619e08836/models/nerf.py#L143
+
+
 #### 23-02-2020:
 Starting point: Add one-hot semantic in dataloader. Discuss about the architecture today with Teddy.
 
