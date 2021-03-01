@@ -140,7 +140,7 @@ class NeRF(nn.Module):
         for i in range(self.D//2):
             xyz_feature = getattr(self, f"feature_encoding_{i+1}")(xyz_feature)
 
-        sigma_feature = self.sigma_color(xyz_feature)
+        sigma_feature = self.sigma_feature(xyz_feature)
         seg = self.feature(xyz_feature)
 
         if sigma_only:

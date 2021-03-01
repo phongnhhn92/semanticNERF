@@ -1,23 +1,8 @@
 # semanticNERF
 
+
 #### 23-02-2020:
-Starting point: Add one-hot semantic in dataloader. Discuss about the architecture today with Teddy.
-
-#### 26-02-2020:
-Dual path semantic NERF network that predicts RGB and semantic maps consistently.
-![](/images/dual_path_semanticNERF.jpg "Ideas")
-
-RGB output
-![](/images/dual_path_RGB.gif "Ideas")
-
-Semantic output
-![](/images/dual_path_semantic.gif "Ideas")
-
-Depth predicted by color density (sigma_c)
-![](/images/dual_path_depth.gif "Ideas")
-
-Depth predicted by sematic density (sigma_s)
-![](/images/dual_path_depth_seg.gif "Ideas")
+Starting point: same with semantic branch.
 
 
 #### Dataset:
