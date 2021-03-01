@@ -5,7 +5,7 @@ Starting point: Add one-hot semantic in dataloader. Discuss about the architectu
 
 #### 26-02-2020:
 Dual path semantic NERF network that predicts RGB and semantic maps consistently.
-![](/images/dual_path_semanticNERF.jpg "Ideas")
+![](/images/dual_path_semanticNERF.png "Ideas")
 
 RGB output
 ![](/images/dual_path_RGB.gif "Ideas")
@@ -16,8 +16,12 @@ Semantic output
 Depth predicted by color density (sigma_c)
 ![](/images/dual_path_depth.gif "Ideas")
 
-Depth predicted by sematic density (sigma_s)
-![](/images/dual_path_depth_seg.gif "Ideas")
+[comment]: <> (Depth predicted by sematic density &#40;sigma_s&#41;)
+
+[comment]: <> (![]&#40;/images/dual_path_depth_seg.gif "Ideas"&#41;)
+
+#### 01-03-2020:
+After fixing the bug, using 2 different sigmas leads to less accurate semantic results. Therefore, using sigma_color to predict both color and semantic images is the good way to go.
 
 
 #### Dataset:
