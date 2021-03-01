@@ -2,7 +2,10 @@
 
 
 #### 23-02-2020:
-Starting point: same with semantic branch.
+Starting point: Semantic of the ray is added as additional input to the network. In the future, this semantic ray can comes from reference view so that we can apply homography transformation to project this information to the target view.
+Furthermore, we can add another RGB image and a style encoder to learn the style of the output images.
+
+![](/images/ideas_23-02-2020.jpg "Ideas")
 
 
 #### Dataset:
@@ -45,11 +48,3 @@ python main.py --dataset_name carla
 
 #### Ideas:
 Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DApcRCgLtf2DzNNI3nO4/edit#slide=id.gb4f7efcc71_0_64)
-
-18-02-2020: add another feature vector as output of NERF for semantic prediction.
-![](/images/img.png "Ideas")
-
-23-02-2020: Add one hot semantic as additional input to NERF. Train significantly faster.
-However, the drawback is that we need semantic as input. Can we train a latent feature vector that understand the semantic so that we dont need semantic input but still output the semantic results ?
-Later, when we use edited semantic input the output might change robustly.
-![](/images/ideas_23-02-2020.jpg "Ideas")

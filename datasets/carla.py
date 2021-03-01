@@ -224,8 +224,10 @@ class CarlaDataset(Dataset):
                     idx = self.val_idx
                 img = self.list_data[idx]['rgb'].view(3, -1).permute(1, 0)
                 seg = self.all_segs[idx]
+                segs_onehot = self.all_segs_onehot[idx]
                 sample['rgbs'] = img
                 sample['segs'] = seg
+                sample['segs_onehot'] = segs_onehot
 
             return sample
 

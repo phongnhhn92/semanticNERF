@@ -50,7 +50,7 @@ class NeRFSystem(LightningModule):
         items.pop("v_num", None)
         return items
 
-    def forward(self, rays):
+    def forward(self, rays, segs):
         """Do batched inference on rays using chunk."""
         B = rays.shape[0]
         results = defaultdict(list)
@@ -59,6 +59,7 @@ class NeRFSystem(LightningModule):
                 render_rays(self.models,
                             self.embeddings,
                             rays[i:i + self.hparams.chunk],
+                            segs[i:i + self.hparams.chunk],
                             self.hparams.N_samples,
                             self.hparams.use_disp,
                             self.hparams.perturb,
@@ -97,10 +98,10 @@ class NeRFSystem(LightningModule):
                           pin_memory=True)
 
     def training_step(self, batch, batch_nb):
-        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs']
+        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs_onehot']
 
-        results = self(rays)
-        loss = self.loss(results, rgbs, segs.long().squeeze(-1))
+        results = self(rays, segs)
+        loss = self.loss(results, rgbs)
 
         with torch.no_grad():
             typ = 'fine' if 'rgb_fine' in results else 'coarse'
@@ -120,12 +121,12 @@ class NeRFSystem(LightningModule):
                           pin_memory=True)
 
     def validation_step(self, batch, batch_nb):
-        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs']
+        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs_onehot']
         rays = rays.squeeze()  # (H*W, 3)
         rgbs = rgbs.squeeze()  # (H*W, 3)
-        segs = segs.squeeze()  # (H*W)
-        results = self(rays)
-        log = {'val_loss': self.loss(results, rgbs, segs.long())}
+        segs = segs.squeeze()  # (H*W, 13)
+        results = self(rays, segs)
+        log = {'val_loss': self.loss(results, rgbs)}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
         if batch_nb == 0:
@@ -136,19 +137,6 @@ class NeRFSystem(LightningModule):
             stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
             self.logger.experiment.add_images('val/GT_pred_depth',
                                               stack, self.global_step)
-
-            # Visualize semantic results
-            save_semantic = SaveSemantics('carla')
-            seg_pred = results[f'seg_{typ}'].cpu()
-            seg_pred = torch.softmax(seg_pred, dim=1)
-            seg_pred = torch.argmax(seg_pred, dim=1).view(H, W).unsqueeze(0)  # (1,H,W)
-            seg_pred = torch.from_numpy(save_semantic.to_color(seg_pred)).permute(2, 0, 1)  # (H,W,3)
-
-            segs = segs.view(H, W).unsqueeze(0).cpu()
-            segs = torch.from_numpy(save_semantic.to_color(segs)).permute(2, 0, 1)  # (H,W,3)
-            stack_segs = torch.stack([segs, seg_pred])
-            self.logger.experiment.add_images('val/GT_pred_semantics', stack_segs / 255.0, self.global_step)
-            # save_image(stack_segs / 255.0,'out.png')
 
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
