@@ -5,7 +5,7 @@ Starting point: Add one-hot semantic in dataloader. Discuss about the architectu
 
 #### 26-02-2020:
 Dual path semantic NERF network that predicts RGB and semantic maps consistently.
-![](/images/dual_path_semanticNERF.png "Ideas")
+![](/images/dual_path_semanticNERF.jpg "Ideas")
 
 RGB output
 ![](/images/dual_path_RGB.gif "Ideas")
