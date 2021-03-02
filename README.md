@@ -7,6 +7,11 @@ Furthermore, we can add another RGB image and a style encoder to learn the style
 
 ![](/images/ideas_23-02-2020.jpg "Ideas")
 
+RGB output:
+![](/images/manipulation_RGB.gif "Ideas")
+
+Depth output:
+![](/images/manipulation_RGB.gif "Ideas")
 
 #### Dataset:
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
