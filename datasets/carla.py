@@ -63,7 +63,7 @@ def one_hot_encoding(labels, C):
     return target
 
 class CarlaDataset(Dataset):
-    def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1,classes = 13):
+    def __init__(self, root_dir, split='train', img_wh=(800, 600), spheric_poses=False, val_num=1,classes = 13, seg_flip = False,):
         """
         spheric_poses: whether the images are taken in a spheric inward-facing manner
                        default: False (forward-facing)
@@ -75,8 +75,10 @@ class CarlaDataset(Dataset):
         self.spheric_poses = spheric_poses
         self.val_num = max(1, val_num)
         self.classes = classes
+        self.seg_flip = seg_flip
 
         # For rendering
+        #self.seg_flip = True
         self.type = 'spiral'
         #self.type = 'horizontal'
 
@@ -94,7 +96,7 @@ class CarlaDataset(Dataset):
         self.all_segs_onehot = []
         for i in range(n):
             for j in range(n):
-                data = read_cam(self.root_dir, i, j)
+                data = read_cam(self.root_dir, i, j,mirror=self.seg_flip)
                 self.list_data.append(data)
                 # Get focal length, all images share same focal length
                 if i == 0 and i == 0:
@@ -152,6 +154,8 @@ class CarlaDataset(Dataset):
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # ((N_images-1)*h*w, 3)
             self.all_segs = torch.cat(self.all_segs, 0)  # ((N_images-1)*h*w, 1)
             self.all_segs_onehot = torch.cat(self.all_segs_onehot, 0)  # ((N_images-1)*h*w, 13)
+
+
         elif self.split == 'val':
             print('val image number is', n ** 2 // 2)
             self.val_idx = n ** 2 // 2

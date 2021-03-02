@@ -3,6 +3,7 @@ import numpy as np
 import cv2 as cv
 from PIL import Image
 import torch.nn.functional as F
+from torchvision.utils import save_image
 
 carla_pallete = {
     0: [0, 0, 0],  # None
@@ -110,9 +111,12 @@ def read_dep(depth_path):
     normalized_depth = torch.from_numpy(normalized_depth * 1000.0)
     return normalized_depth.unsqueeze(0)
 
-def read_sem(semantics_path, height=None, width=None):
+def read_sem(semantics_path, height=None, width=None,mirror=False):
     seg = cv.imread(semantics_path, cv.IMREAD_ANYCOLOR |
                     cv.IMREAD_ANYDEPTH)
+    if mirror == True:
+        seg = cv.flip(seg,1)
+
     seg = np.asarray(seg, dtype=np.uint8)
     seg = torch.from_numpy(seg[..., 2]).float().squeeze()
     h, w = seg.shape
@@ -156,7 +160,7 @@ def read_pose(data_path, lf_size=7):
         new_pose.append(torch.from_numpy(pose_cam_2_ref))
     return new_pose
 
-def read_cam(data_path, row, col, lf_size=7):
+def read_cam(data_path, row, col, lf_size=7, mirror=False):
     ''' give path to an episode and camera row and col this function returns
         RGB, SEM, DEPTH images, K matrix, extrinsic camera pose
     '''
@@ -165,9 +169,15 @@ def read_cam(data_path, row, col, lf_size=7):
     sem_file = os.path.join(data_path, 'SEM_{:0>2d}_{:0>2d}.png'.format(row, col))
     pose_data = read_pose(data_path)
     pose = pose_data[int(row*lf_size + col)]
-    col_img = torch.from_numpy(np.asarray(Image.open(col_file))).float().div(255.0)
+    if mirror:
+        col_img = torch.from_numpy(np.asarray(Image.open(col_file).transpose(Image.FLIP_LEFT_RIGHT))).float().div(255.0)
+    else:
+        col_img = torch.from_numpy(np.asarray(Image.open(col_file))).float().div(255.0)
     col_img = col_img.permute(2, 0, 1)
-    sem_img = read_sem(sem_file)
+
+    sem_img = read_sem(sem_file,mirror=mirror)
+    # save_image(col_img,'a.png')
+    # save_image(sem_img, 'b.png')
     dep_img = read_dep(dep_file)
     k_matrix = get_k()
     r_mat = pose[:3, :3]
