@@ -11,7 +11,7 @@ RGB output:
 ![](/images/manipulation_RGB.gif "Ideas")
 
 Depth output:
-![](/images/manipulation_RGB.gif "Ideas")
+![](/images/manipulation_depth.gif "Ideas")
 
 #### Dataset:
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
