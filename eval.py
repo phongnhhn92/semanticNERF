@@ -59,7 +59,7 @@ def get_opts():
 
 @torch.no_grad()
 def batched_inference(models, embeddings,
-                      rays, N_samples, N_importance, use_disp,
+                      rays,segs, N_samples, N_importance, use_disp,
                       chunk):
     """Do batched inference on rays using chunk."""
     B = rays.shape[0]
@@ -69,6 +69,7 @@ def batched_inference(models, embeddings,
             render_rays(models,
                         embeddings,
                         rays[i:i+chunk],
+                        segs[i:i+chunk],
                         N_samples,
                         use_disp,
                         0,
@@ -93,6 +94,9 @@ if __name__ == "__main__":
     kwargs = {'root_dir': args.root_dir,
               'split': args.split,
               'img_wh': tuple(args.img_wh)}
+
+    fps =5 if args.split == 'test_train' else 30
+
     if args.dataset_name == 'llff':
         kwargs['spheric_poses'] = args.spheric_poses
     dataset = dataset_dict[args.dataset_name](**kwargs)
@@ -112,44 +116,24 @@ if __name__ == "__main__":
         nerf_fine.cuda().eval()
         models['fine'] = nerf_fine
 
-    imgs, segs ,depth_maps, depth_maps_seg, psnrs = [], [], [], [], []
+    imgs ,depth_maps, psnrs = [], [], []
     dir_name = f'results/{args.dataset_name}/{args.scene_name}'
     os.makedirs(dir_name, exist_ok=True)
 
     for i in tqdm(range(len(dataset))):
         sample = dataset[i]
         rays = sample['rays'].cuda()
-        results = batched_inference(models, embeddings, rays,
+        segs = sample['segs_onehot'].cuda()
+        results = batched_inference(models, embeddings, rays, segs,
                                     args.N_samples, args.N_importance, args.use_disp,
                                     args.chunk)
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
         img_pred = np.clip(results[f'rgb_{typ}'].view(h, w, 3).cpu().numpy(), 0, 1)
 
-        seg_pred = results[f'seg_{typ}'].cpu()
-        seg_pred = torch.softmax(seg_pred, dim=1)
-        seg_pred = torch.argmax(seg_pred, dim=1).view(h, w).unsqueeze(0)  # (1,H,W)
-        save_semantic = SaveSemantics('carla')
-        save_semantic(seg_pred,os.path.join(dir_name, f'seg_{i:03d}.png'))
-        seg_pred = save_semantic.to_color(seg_pred)
-        segs += [seg_pred]
-
         if args.save_depth:
             depth_pred = results[f'depth_{typ}'].view(h, w).cpu().numpy()
             depth_maps += [depth_pred]
-            if args.depth_format == 'pfm':
-                save_pfm(os.path.join(dir_name, f'depth_{i:03d}.pfm'), depth_pred)
-            else:
-                with open(f'depth_{i:03d}', 'wb') as f:
-                    f.write(depth_pred.tobytes())
-
-            depth_pred = results[f'depth_seg_{typ}'].view(h, w).cpu().numpy()
-            depth_maps_seg += [depth_pred]
-            if args.depth_format == 'pfm':
-                save_pfm(os.path.join(dir_name, f'depth_seg_{i:03d}.pfm'), depth_pred)
-            else:
-                with open(f'depth_seg_{i:03d}', 'wb') as f:
-                    f.write(depth_pred.tobytes())
 
         img_pred_ = (img_pred * 255).astype(np.uint8)
         imgs += [img_pred_]
@@ -160,17 +144,16 @@ if __name__ == "__main__":
             img_gt = rgbs.view(h, w, 3)
             psnrs += [metrics.psnr(img_gt, img_pred).item()]
 
-    imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}.gif'), imgs, fps=30)
-    imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_semantic.gif'), segs, fps=30)
+    imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}.gif'), imgs, fps=fps)
 
     if args.save_depth:
         depth_imgs = (depth_maps - np.min(depth_maps)) / (max(np.max(depth_maps) - np.min(depth_maps), 1e-8))
         depth_imgs_ = [cv2.applyColorMap((img * 255).astype(np.uint8), cv2.COLORMAP_JET) for img in depth_imgs]
-        imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_depth.gif'), depth_imgs_, fps=30)
 
-        depth_imgs = (depth_maps_seg - np.min(depth_maps_seg)) / (max(np.max(depth_maps_seg) - np.min(depth_maps_seg), 1e-8))
-        depth_imgs_ = [cv2.applyColorMap((img * 255).astype(np.uint8), cv2.COLORMAP_JET) for img in depth_imgs]
-        imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_depth_seg.gif'), depth_imgs_, fps=30)
+        for i,img in enumerate(depth_imgs_):
+            imageio.imwrite(os.path.join(dir_name, f'{i:03d}_depth.png'), img)
+
+        imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}_depth.gif'), depth_imgs_, fps=fps)
 
     if psnrs:
         mean_psnr = np.mean(psnrs)
