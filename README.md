@@ -1,5 +1,6 @@
 # semanticNERF
 
+#### Slide: [link](https://docs.google.com/presentation/d/1aMH8CI5kQGRWC6GxAHqcgoqiBcEOAptU9fZdTK2aVBg/edit?usp=sharing)
 
 #### 23-02-2020:
 Starting point: Semantic of the ray is added as additional input to the network. In the future, this semantic ray can comes from reference view so that we can apply homography transformation to project this information to the target view.
