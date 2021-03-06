@@ -116,15 +116,20 @@ if __name__ == "__main__":
         nerf_fine.cuda().eval()
         models['fine'] = nerf_fine
 
-    imgs ,depth_maps, psnrs = [], [], []
+    imgs ,depth_maps, psnrs, input_segs = [], [], [], []
     dir_name = f'results/{args.dataset_name}/{args.scene_name}'
     os.makedirs(dir_name, exist_ok=True)
 
     for i in tqdm(range(len(dataset))):
         sample = dataset[i]
         rays = sample['rays'].cuda()
-        segs = sample['segs_onehot'].cuda()
-        results = batched_inference(models, embeddings, rays, segs,
+        segs_onehot = sample['segs_onehot'].cuda()
+        segs = sample['segs'].cpu().view(h,w,1).squeeze(-1)
+        save_semantic = SaveSemantics('carla')
+        save_semantic(segs,os.path.join(dir_name, f'inputSeg_{i:03d}.png'))
+        input_segs += [save_semantic.to_color(segs)]
+
+        results = batched_inference(models, embeddings, rays, segs_onehot,
                                     args.N_samples, args.N_importance, args.use_disp,
                                     args.chunk)
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
@@ -145,6 +150,7 @@ if __name__ == "__main__":
             psnrs += [metrics.psnr(img_gt, img_pred).item()]
 
     imageio.mimsave(os.path.join(dir_name, f'{args.scene_name}.gif'), imgs, fps=fps)
+    imageio.mimsave(os.path.join(dir_name, f'inputSeg_{args.scene_name}.gif'), input_segs, fps=fps)
 
     if args.save_depth:
         depth_imgs = (depth_maps - np.min(depth_maps)) / (max(np.max(depth_maps) - np.min(depth_maps), 1e-8))
