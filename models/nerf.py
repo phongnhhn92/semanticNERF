@@ -94,6 +94,8 @@ class NeRF(nn.Module):
         self.rgb = nn.Sequential(
                         nn.Linear(W//2, 3),
                         nn.Sigmoid())
+        self.output_feature = nn.Sequential(
+            nn.Linear(W // 2, self.seg_classes))
 
     def forward(self, x, seg, sigma_only=False):
         """
@@ -140,7 +142,8 @@ class NeRF(nn.Module):
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
         rgb = self.rgb(dir_encoding)
+        feature = self.output_feature(dir_encoding)
 
-        out = torch.cat([rgb, sigma_color], -1)
+        out = torch.cat([rgb, feature, sigma_color], -1)
 
         return out

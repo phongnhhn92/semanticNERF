@@ -127,7 +127,7 @@ def render_rays(models,
             out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
             out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=out.shape[-1])
-            rgbs, sigmas_color  = torch.split(out, [3, 1], dim=-1)
+            rgbs, features, sigmas_color  = torch.split(out, [3, 13, 1], dim=-1)
             sigmas_color = sigmas_color.squeeze(-1)
 
         # Convert these values using volume rendering (Section 4)
@@ -158,6 +158,7 @@ def render_rays(models,
             return
 
         rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1') * rgbs, 'n1 n2 c -> n1 c', 'sum')
+        features_ = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1') * features, 'n1 n2 c -> n1 c', 'sum')
         depth_map = reduce(weights * z_vals, 'n1 n2 -> n1', 'sum')
 
 
@@ -165,9 +166,8 @@ def render_rays(models,
             rgb_map += 1 - weights_sum.unsqueeze(1)
 
         results[f'rgb_{typ}'] = rgb_map
+        results[f'feature_{typ}'] = features_
         results[f'depth_{typ}'] = depth_map
-
-
         return
 
     embedding_xyz, embedding_dir = embeddings['xyz'], embeddings['dir']
