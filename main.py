@@ -98,9 +98,9 @@ class NeRFSystem(LightningModule):
                           pin_memory=True)
 
     def training_step(self, batch, batch_nb):
-        rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs_onehot']
+        rays, rgbs, segs_onehot, segs = batch['rays'], batch['rgbs'], batch['segs_onehot'], batch['segs']
 
-        results = self(rays, segs)
+        results = self(rays, segs_onehot)
         loss = self.loss(results, rgbs, segs.long().squeeze(-1))
 
         with torch.no_grad():
@@ -113,42 +113,55 @@ class NeRFSystem(LightningModule):
 
         return loss
 
-    # def val_dataloader(self):
-    #     return DataLoader(self.val_dataset,
-    #                       shuffle=False,
-    #                       num_workers=4,
-    #                       batch_size=1,  # validate one image (H*W rays) at a time
-    #                       pin_memory=True)
-    #
-    # def validation_step(self, batch, batch_nb):
-    #     rays, rgbs, segs = batch['rays'], batch['rgbs'], batch['segs_onehot']
-    #     rays = rays.squeeze()  # (H*W, 3)
-    #     rgbs = rgbs.squeeze()  # (H*W, 3)
-    #     segs = segs.squeeze()  # (H*W, 13)
-    #     results = self(rays, segs)
-    #     log = {'val_loss': self.loss(results, rgbs)}
-    #     typ = 'fine' if 'rgb_fine' in results else 'coarse'
-    #
-    #     if batch_nb == 0:
-    #         W, H = self.hparams.img_wh
-    #         img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
-    #         img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
-    #         depth = visualize_depth(results[f'depth_{typ}'].view(H, W))  # (3, H, W)
-    #         stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
-    #         self.logger.experiment.add_images('val/GT_pred_depth',
-    #                                           stack, self.global_step)
-    #
-    #     psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
-    #     log['val_psnr'] = psnr_
-    #
-    #     return log
-    #
-    # def validation_epoch_end(self, outputs):
-    #     mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-    #     mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
-    #
-    #     self.log('val/loss', mean_loss)
-    #     self.log('val/psnr', mean_psnr, prog_bar=True)
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset,
+                          shuffle=False,
+                          num_workers=4,
+                          batch_size=1,  # validate one image (H*W rays) at a time
+                          pin_memory=True)
+
+    def validation_step(self, batch, batch_nb):
+        rays, rgbs, segs_onehot,segs = batch['rays'], batch['rgbs'], batch['segs_onehot'], batch['segs']
+        rays = rays.squeeze()  # (H*W, 3)
+        rgbs = rgbs.squeeze()  # (H*W, 3)
+        segs = segs.squeeze()  # (H*W)
+        segs_onehot = segs_onehot.squeeze()  # (H*W, 13)
+        results = self(rays, segs_onehot)
+        log = {'val_loss': self.loss(results, rgbs, segs.long())}
+        typ = 'fine' if 'rgb_fine' in results else 'coarse'
+
+        if batch_nb == 0:
+            W, H = self.hparams.img_wh
+            img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
+            img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
+            depth = visualize_depth(results[f'depth_{typ}'].view(H, W))  # (3, H, W)
+            stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
+            self.logger.experiment.add_images('val/GT_pred_depth',
+                                              stack, self.global_step)
+
+            # Visualize semantic results
+            save_semantic = SaveSemantics('carla')
+            seg_pred = results[f'feature_{typ}'].cpu()
+            seg_pred = torch.softmax(seg_pred, dim=1)
+            seg_pred = torch.argmax(seg_pred, dim=1).view(H, W).unsqueeze(0)  # (1,H,W)
+            seg_pred = torch.from_numpy(save_semantic.to_color(seg_pred)).permute(2, 0, 1)  # (H,W,3)
+
+            segs = segs.view(H, W).unsqueeze(0).cpu()
+            segs = torch.from_numpy(save_semantic.to_color(segs)).permute(2, 0, 1)  # (H,W,3)
+            stack_segs = torch.stack([segs, seg_pred])
+            self.logger.experiment.add_images('val/GT_pred_semantics', stack_segs / 255.0, self.global_step)
+
+        psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
+        log['val_psnr'] = psnr_
+
+        return log
+
+    def validation_epoch_end(self, outputs):
+        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
+
+        self.log('val/loss', mean_loss)
+        self.log('val/psnr', mean_psnr, prog_bar=True)
 
 
 def main(hparams):

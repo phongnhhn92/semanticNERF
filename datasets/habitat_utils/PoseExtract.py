@@ -1,17 +1,45 @@
 import numpy as np
+import habitat_sim.registry as registry
 import matplotlib.pyplot as plt
-
-import torch
-from torch.utils.data import DataLoader, Dataset
-from torchvision import utils
-from torchvision.transforms import ToTensor
-
-from habitat_sim.utils.data import ImageExtractor
+from habitat_sim.utils.data import ImageExtractor, PoseExtractor
 from torchvision import transforms as T
+from torch.utils.data import DataLoader, Dataset
 
-# Replace with the path to your scene file
-SCENE_FILEPATH = "/media/phong/Data2TB/dataset/Replica/Replica-Dataset/dataset/apartment_0/habitat/mesh_semantic.ply"
-BATCH_SIZE = 4
+
+@registry.register_pose_extractor(name="random_pose_extractor")
+class RandomPoseExtractor(PoseExtractor):
+    def extract_poses(self, view, fp):
+        height, width = view.shape
+        num_random_points = 4
+        points = []
+        while len(points) < num_random_points:
+            # Get the row and column of a random point on the topdown view
+            row, col = np.random.randint(0, height), np.random.randint(0, width)
+
+            # Convenient method in the PoseExtractor class to check if a point
+            # is navigable
+            if self._valid_point(row, col, view):
+                points.append((row, col))
+
+        poses = []
+
+        # Now we need to define a "point of interest" which is the point the camera will
+        # look at. These two points together define a camera position and angle
+        for point in points:
+            r, c = point
+            point_of_interest = (r - 1, c) # Just look forward
+            pose = (point, point_of_interest, fp)
+            poses.append(pose)
+
+        return poses
+
+scene_filepath = "/media/phong/Data2TB/dataset/Replica/Replica-Dataset/dataset/apartment_0/habitat/mesh_semantic.ply"
+extractor = ImageExtractor(
+    scene_filepath,
+    img_size=(600,800),
+    output=["rgba", "depth", "semantic"],
+    pose_extractor_name="panorama_extractor"
+)
 
 class SemanticSegmentationDataset(Dataset):
     def __init__(self, extractor, transforms=None):
@@ -62,13 +90,11 @@ class SemanticSegmentationDataset(Dataset):
     def get_class_labels(self, raw_semantic_output):
         return self.map_to_class_labels(raw_semantic_output)
 
-
-extractor = ImageExtractor(SCENE_FILEPATH, output=['rgba', 'semantic'])
-
 dataset = SemanticSegmentationDataset(extractor,
     transforms=T.Compose([T.ToTensor()])
 )
 
+BATCH_SIZE = 4
 # Create a Dataloader to batch and shuffle our data
 dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 

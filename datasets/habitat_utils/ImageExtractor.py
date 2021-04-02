@@ -21,8 +21,9 @@ def display_sample(sample):
 
     plt.show()
 
-
-scene_filepath = "/home/phong/data/Work/Paper4/Library/habitat-lab/data/scene_datasets/habitat-test-scenes/apartment_1.glb"
+#/media/phong/Data2TB/dataset/Replica/Replica-Dataset/dataset/apartment_0
+#scene_filepath = "/home/phong/data/Work/Paper4/Library/habitat-lab/data/scene_datasets/habitat-test-scenes/skokloster-castle.glb"
+scene_filepath = "/media/phong/Data2TB/dataset/Replica/Replica-Dataset/dataset/apartment_0/habitat/mesh_semantic.ply"
 
 extractor = ImageExtractor(
     scene_filepath,
