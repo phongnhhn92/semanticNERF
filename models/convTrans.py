@@ -112,35 +112,43 @@ class CvT3D(nn.Module):
         *,
         num_classes,
         num_layers,
-        emb_dim= [64,128,256],
-        emb_kernel=[7,3,3],
-        emb_stride=[4,2,2],
-        proj_kernel=[3,3,3],
-        kv_proj_stride=[2,2,2],
-        heads=[1,3,4],
-        depth=[1,2,10],
-        mlp_mult=[4,4,4],
+        emb_dim= [64,128,256,256,128,64],
+        emb_kernel=[7,3,3,3,3,3],
+        emb_stride=[4,2,2,1,1,1],
+        proj_kernel=[3,3,3,3,3,3],
+        kv_proj_stride=[2,2,2,1,1,1],
+        heads=[1,3,4,4,3,1],
+        depth=[1,2,3,3,2,1],
+        mlp_mult=[4,4,4,4,4,4],
         dropout = 0.
     ):
         super().__init__()
         kwargs = dict(locals())
-
+        self.num_layers = num_layers
         dim = 3
-        layers = []
-        assert num_layers == len(emb_dim), 'Invalid input for CvT'
 
         for i in range(num_layers):
-            layers.append(nn.Sequential(
-                nn.Conv3d(dim, emb_dim[i], kernel_size=emb_kernel[i], padding=(emb_kernel[i] // 2),
-                          stride=emb_stride[i]),
-                Transformer(dim=emb_dim[i], proj_kernel=proj_kernel[i],
+
+            conv_layer = nn.Conv3d(dim, emb_dim[i], kernel_size=emb_kernel[i], padding=(emb_kernel[i] // 2),
+                          stride=emb_stride[i])
+
+            transformer = Transformer(dim=emb_dim[i], proj_kernel=proj_kernel[i],
                             kv_proj_stride=kv_proj_stride[i], depth=depth[i], heads=heads[i],
                             mlp_mult=mlp_mult[i], dropout=dropout)
-            ))
+            if i < 3:
+                setattr(self, f"layer_{i+1}", nn.Sequential(conv_layer,transformer))
+            else:
+                upsample = nn.Upsample(scale_factor=2,align_corners=True,mode='trilinear')
+                setattr(self, f"layer_{i + 1}", nn.Sequential(upsample,conv_layer, transformer))
+
             dim = emb_dim[i]
 
-        self.layers = nn.Sequential(
-            *layers,)
 
     def forward(self, x):
-        return self.layers(x)
+        layer1 = self.layer_1(x)
+        layer2 = self.layer_2(layer1)
+        layer3 = self.layer_3(layer2)
+        layer4 = self.layer_4(layer3)
+        layer5 = self.layer_5(layer4 + layer2)
+        layer6 = self.layer_6(layer5 + layer1)
+        return layer6
