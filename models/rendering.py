@@ -1,4 +1,4 @@
-import torch
+import torch,math
 from einops import rearrange, reduce, repeat
 
 __all__ = ['render_rays']
@@ -58,6 +58,7 @@ def render_rays(models,
                 chunk=1024*32,
                 white_back=False,
                 test_time=False,
+                miniBatchSize = 4,
                 **kwargs
                 ):
     """
@@ -101,6 +102,10 @@ def render_rays(models,
                 weights: (N_rays, N_samples_): weights of each sample
         """
         N_samples_ = xyz.shape[1]
+        N_rays_perBatch = N_rays // miniBatchSize
+        if test_time == False:
+            W = H =  int(math.sqrt(N_rays_perBatch))
+
         xyz_ = rearrange(xyz, 'n1 n2 c -> (n1 n2) c') # (N_rays*N_samples_, 3)
 
         # Perform model inference to get rgb and raw sigma
@@ -114,17 +119,31 @@ def render_rays(models,
             out = torch.cat(out_chunks, 0)
             sigmas = rearrange(out, '(n1 n2) 1 -> n1 n2', n1=N_rays, n2=N_samples_)
         else: # infer rgb and sigma and others
-            dir_embedded_ = repeat(dir_embedded, 'n1 c -> (n1 n2) c', n2=N_samples_)
-                            # (N_rays*N_samples_, embed_dir_channels)
-            for i in range(0, B, chunk):
-                xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-                xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded_[i:i+chunk]], 1)
-                out_chunks += [model(xyzdir_embedded, sigma_only=False)]
 
-            out = torch.cat(out_chunks, 0)
+            dir_embedded_ = repeat(dir_embedded, 'n1 c -> n1 n2 c', n2=N_samples_)
+                            # (N_rays*N_samples_, embed_dir_channels)
+            xyz_embedded = embedding_xyz(xyz_)
+
+            # Patchify embedded xyzdir
+
+            xyz_patches = rearrange(xyz_embedded,'(n1 n2) c -> n1 n2 c',n1=N_rays, n2=N_samples_)
+            xyz_patches = rearrange(xyz_patches,'(b h w) n2 c -> b c n2 h w', b = miniBatchSize,
+                                    c=xyz_patches.shape[-1],w=W,h=H)
+            dir_patches = rearrange(dir_embedded_,'(b h w) n2 c -> b c n2 h w', b= miniBatchSize,
+                                    c=dir_embedded_.shape[-1],w=W,h=H)
+            del dir_embedded_, xyz_embedded
+
+            #ConvNERF processing
+            out = model(xyz_patches,dir_patches)
+            # for i in range(0, B, chunk):
+            #     xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
+            #     xyzdir_embedded = torch.cat([xyz_embedded,
+            #                                  dir_embedded_[i:i+chunk]], 1)
+            #     out_chunks += [model(xyzdir_embedded, sigma_only=False)]
+
+            # out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
-            out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=4)
+            out = rearrange(out, 'b c n2 h w -> (b h w) n2 c', b=miniBatchSize, n2=N_samples_, c=4,w=W,h=H)
             rgbs = out[..., :3] # (N_rays, N_samples_, 3)
             sigmas = out[..., 3] # (N_rays, N_samples_)
             
@@ -135,10 +154,10 @@ def render_rays(models,
 
         # compute alpha by the formula (3)
         noise = torch.randn_like(sigmas) * noise_std
-        alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
+        #alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
 
         # softplus: f(x) = ln(1+e^x)
-        #alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
+        alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
 
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, 1-a1, 1-a2, ...]

@@ -38,9 +38,10 @@ class FeedForward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Conv3d(dim, dim * mult, 1),
-            nn.GELU(),
+            nn.ReLU(True),
             nn.Dropout(dropout),
             nn.Conv3d(dim * mult, dim, 1),
+            nn.ReLU(True),
             nn.Dropout(dropout)
         )
     def forward(self, x):
@@ -52,7 +53,10 @@ class DepthWiseConv3d(nn.Module):
         self.net = nn.Sequential(
             nn.Conv3d(dim_in, dim_in, kernel_size = kernel_size, padding = padding, groups = dim_in, stride = stride, bias = bias),
             nn.BatchNorm3d(dim_in),
-            nn.Conv3d(dim_in, dim_out, kernel_size = 1, bias = bias)
+            nn.ReLU(True),
+            nn.Conv3d(dim_in, dim_out, kernel_size = 1, bias = bias),
+            nn.ReLU(True),
+
         )
     def forward(self, x):
         return self.net(x)
@@ -72,6 +76,7 @@ class Attention(nn.Module):
 
         self.to_out = nn.Sequential(
             nn.Conv3d(inner_dim, dim, 1),
+            nn.ReLU(True),
             nn.Dropout(dropout)
         )
 
@@ -110,27 +115,27 @@ class CvT3D(nn.Module):
     def __init__(
         self,
         *,
-        num_classes,
-        num_layers,
-        emb_dim= [64,128,256,256,128,64],
-        emb_kernel=[7,3,3,3,3,3],
-        emb_stride=[4,2,2,1,1,1],
-        proj_kernel=[3,3,3,3,3,3],
-        kv_proj_stride=[2,2,2,1,1,1],
-        heads=[1,3,4,4,3,1],
-        depth=[1,2,3,3,2,1],
-        mlp_mult=[4,4,4,4,4,4],
-        dropout = 0.
+            num_layers=6,
+            input_dim=63,
+            dir_dim=27,
+            emb_dim=[64, 128, 256, 128, 64, 32],
+            emb_kernel=[3, 3, 3, 3, 3, 3],
+            emb_stride=[2, 2, 2, 1, 1, 1],
+            proj_kernel=[3, 3, 3, 3, 3, 3],
+            kv_proj_stride=[8, 4, 2, 2, 4, 8],
+            heads=[1, 2, 3, 3, 2, 1],
+            depth=[1, 1, 1, 1, 1, 1],
+            mlp_mult=[1, 1, 1, 1, 1, 1],
+            dropout=0.0,
     ):
         super().__init__()
         kwargs = dict(locals())
         self.num_layers = num_layers
-        dim = 3
-
+        dim = input_dim
         for i in range(num_layers):
 
-            conv_layer = nn.Conv3d(dim, emb_dim[i], kernel_size=emb_kernel[i], padding=(emb_kernel[i] // 2),
-                          stride=emb_stride[i])
+            conv_layer = nn.Sequential(nn.Conv3d(dim, emb_dim[i], kernel_size=emb_kernel[i], padding=(emb_kernel[i] // 2),
+                          stride=emb_stride[i]),nn.ReLU(True))
 
             transformer = Transformer(dim=emb_dim[i], proj_kernel=proj_kernel[i],
                             kv_proj_stride=kv_proj_stride[i], depth=depth[i], heads=heads[i],
@@ -143,12 +148,24 @@ class CvT3D(nn.Module):
 
             dim = emb_dim[i]
 
+        self.sigma_layer = nn.Conv3d(dim, 1, kernel_size=3, padding=1,stride=1)
+        self.rgb_layer = nn.Sequential(nn.Conv3d(dim + dir_dim, dim //2 , kernel_size=3, padding=1,stride=1),
+                                       nn.ReLU(True),
+                                       nn.Conv3d(dim //2 , 3, kernel_size=3, padding=1,stride=1),
+                                       nn.Sigmoid())
 
-    def forward(self, x):
-        layer1 = self.layer_1(x)
+
+    def forward(self, xyz, dir):
+        layer1 = self.layer_1(xyz)
         layer2 = self.layer_2(layer1)
-        layer3 = self.layer_3(layer2)
-        layer4 = self.layer_4(layer3)
-        layer5 = self.layer_5(layer4 + layer2)
-        layer6 = self.layer_6(layer5 + layer1)
-        return layer6
+        out = self.layer_3(layer2)
+        out = self.layer_4(out)
+        out = self.layer_5(out + layer2)
+        del layer2
+        out = self.layer_6(out + layer1)
+        del layer1
+
+        sigma = self.sigma_layer(out)
+        rgb = self.rgb_layer(torch.cat((out,dir),dim =1))
+
+        return torch.cat((rgb,sigma),dim = 1)

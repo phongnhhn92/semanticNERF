@@ -187,8 +187,8 @@ class LLFFDataset(Dataset):
 
         # Step 1: rescale focal length according to training resolution
         H, W, self.focal = poses[0, :, -1] # original intrinsics, same for all images
-        # assert H*self.img_wh[0] == W*self.img_wh[1], \
-        #     f'You must set @img_wh to have the same aspect ratio as ({W}, {H}) !'
+        assert H*self.img_wh[0] == W*self.img_wh[1], \
+             f'You must set @img_wh to have the same aspect ratio as ({W}, {H}) !'
         
         self.focal *= self.img_wh[0]/W
 
@@ -268,6 +268,7 @@ class LLFFDataset(Dataset):
             else:
                 radius = 1.1 * self.bounds.min()
                 self.poses_test = create_spheric_poses(radius)
+        # print('a')
 
     def define_transforms(self):
         self.transform = T.ToTensor()
