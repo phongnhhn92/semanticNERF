@@ -126,7 +126,8 @@ def render_rays(model,
             sigmas = out[..., 3] # (N_rays, N_samples_)
             
         # Convert these values using volume rendering (Section 4)
-        deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
+        cone_midpoints = 0.5 * (z_vals[:, 1:] + z_vals[:, :-1])
+        deltas = cone_midpoints[:, 1:] - cone_midpoints[:, :-1]  # (N_rays, N_samples_-1)
         delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
         deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
 
@@ -151,7 +152,7 @@ def render_rays(model,
             return
 
         rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1')*rgbs, 'n1 n2 c -> n1 c', 'sum')
-        depth_map = reduce(weights*z_vals, 'n1 n2 -> n1', 'sum')
+        depth_map = reduce(weights*cone_midpoints, 'n1 n2 -> n1', 'sum')
 
         if white_back:
             rgb_map += 1-weights_sum.unsqueeze(1)
@@ -161,17 +162,32 @@ def render_rays(model,
 
         return
 
-    #embedding_xyz, embedding_dir = embeddings['xyz'], embeddings['dir']
+    def cast_cone(origin, direction, t):
+        """
+        https://arxiv.org/abs/2103.13415
+        Cone casting
+        Approximate the conial frustum with a multivariate Gaussian which is charaterized by :
+        1) mean distance along the ray t_mean
+        2) variance along the ray t_var
+        3) variance perpendicular to the ray r_var
+        """
+        t0, t1 = t[:, :-1], t[:, 1:]
+        c, d = (t0 + t1) / 2, (t1 - t0) / 2
+        t_mean = c + (2 * c * d ** 2) / (3 * c ** 2 + d ** 2)
+        t_var = (d ** 2) / 3 - (4 / 15) * ((d ** 4 * (12 * c ** 2 - d ** 2)) / (3 * c ** 2 + d ** 2) ** 2)
+        rad = repeat(radius, 'b -> b c', c=c.shape[-1]).type_as(c)
+        r_var = rad ** 2 * ((c ** 2) / 4 + (5 / 12) * d ** 2 - (4 / 15) * (d ** 4) / (3 * c ** 2 + d ** 2))
+        mean = direction[..., None, :] * t_mean[..., None]
+        null_outer_diag = 1 - (rays_d ** 2) / torch.sum(direction ** 2, -1, keepdim=True)
+        cov_diag = (t_var[..., None] * (rays_d ** 2)[..., None, :]
+                    + r_var[..., None] * null_outer_diag[..., None, :])
+
+        return mean + origin[..., None, :],cov_diag
 
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6] # both (N_rays, 3)
     near, far = rays[:, 6:7], rays[:, 7:8] # both (N_rays, 1)
-    # Embed direction
-    #dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d)) # (N_rays, embed_dir_channels)
-
-    #rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
-    #rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
 
     # Sample depth points
     z_steps = torch.linspace(0, 1, N_samples+1, device=rays.device) # (N_samples)
@@ -189,35 +205,30 @@ def render_rays(model,
         perturb_rand = perturb * torch.rand_like(z_vals)
         z_vals = lower + (upper - lower) * perturb_rand
 
-    t0,t1 = z_vals[: ,:-1], z_vals[: ,1:]
-    c, d = (t0 + t1) / 2, (t1 - t0) / 2
-    t_mean = c + (2 * c * d ** 2) / (3 * c ** 2 + d ** 2)
-    t_var = (d ** 2) / 3 - (4 / 15) * ((d ** 4 * (12 * c ** 2 - d ** 2)) / (3 * c ** 2 + d ** 2) ** 2)
-    rad = repeat(radius, 'b -> b c', c=c.shape[-1]).type_as(c)
-    r_var = rad ** 2 * ((c ** 2) / 4 + (5 / 12) * d ** 2 - (4 / 15) * (d ** 4) / (3 * c ** 2 + d ** 2))
-    mean = rays_d[..., None, :] * t_mean[..., None]
-    null_outer_diag = 1 - (rays_d ** 2) / torch.sum(rays_d ** 2,-1,keepdim=True)
-    cov_diag = (t_var[..., None] * (rays_d ** 2)[..., None, :]
-                + r_var[..., None] * null_outer_diag[..., None, :])
+    mean, cov_diag = cast_cone(rays_o,rays_d,z_vals)
 
-    muy = mean + rays_o[..., None, :]
-
-    IPEmbeded_coarse = embeddings(muy,cov_diag)
-
+    # IPE input to MLP
+    IPEmbeded_coarse = embeddings(mean,cov_diag)
     results = {}
     inference(results, model, 'coarse', IPEmbeded_coarse, z_vals, test_time, **kwargs)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
-        z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].clone().detach(),
+
+        # 2-tap max filter
+        w_k,w_k_prev,w_k_next = results['weights_coarse'][:,1:-1], results['weights_coarse'][:,:-2], \
+                                    results['weights_coarse'][:,2:]
+        # alpha  = 0.01
+        weight_c = 0.5 * (torch.maximum(w_k_prev,w_k)+ torch.maximum(w_k,w_k_next)) + 0.01
+
+        z_vals_ = sample_pdf(z_vals_mid, weight_c.detach(),
                              N_importance, det=(perturb==0))
                   # detach so that grad doesn't propogate to weights_coarse from here
 
-        z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
-                 # combine coarse and fine samples
-
-        xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
-
-        inference(results, model, 'fine', xyz_fine, z_vals, test_time, **kwargs)
+        z_vals = torch.sort(z_vals_, -1)[0]
+        mean, cov_diag = cast_cone(rays_o, rays_d, z_vals)
+        # IPE input to MLP
+        IPEmbeded_fine = embeddings(mean, cov_diag)
+        inference(results, model, 'fine', IPEmbeded_fine, z_vals, test_time, **kwargs)
 
     return results

@@ -40,6 +40,10 @@ class Embedding(nn.Module):
 
 class IPEmbedding(nn.Module):
     def __init__(self, in_channels, N_freqs):
+        """
+        Intergrated positional encoding
+        https://arxiv.org/abs/2103.13415
+        """
         super(IPEmbedding, self).__init__()
         self.N_freqs = N_freqs
         self.in_channels = in_channels

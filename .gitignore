@@ -242,11 +242,10 @@ dmypy.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
 
-/logs
-/checkpoints
-/ckpts
-/visuals
-/results
-
-
 /logs/
+/checkpoints/
+/ckpts/
+/visuals/
+/results/
+
+./train_puhti.sh

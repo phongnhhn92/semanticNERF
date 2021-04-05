@@ -88,7 +88,7 @@ class BlenderDataset(Dataset):
         else: # create data for each image separately
             frame = self.meta['frames'][idx]
             c2w = torch.FloatTensor(frame['transform_matrix'])[:3, :4]
-
+            radius = get_radius(c2w)
             img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
             img = img.resize(self.img_wh, Image.LANCZOS)
             img = self.transform(img) # (4, H, W)
@@ -106,6 +106,7 @@ class BlenderDataset(Dataset):
             sample = {'rays': rays,
                       'rgbs': img,
                       'c2w': c2w,
-                      'valid_mask': valid_mask}
+                      'valid_mask': valid_mask,
+                      'radius': radius}
 
         return sample
