@@ -1,46 +1,34 @@
 import os
-from opt import get_opts
-import torch
 from collections import defaultdict
 
+from pytorch_lightning import LightningModule, Trainer, seed_everything
+# pytorch-lightning
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import TestTubeLogger
 from torch.utils.data import DataLoader
-from datasets import dataset_dict
 
+from datasets import dataset_dict
+# losses
+from losses import loss_dict
+# metrics
+from metrics import *
 # models
 from models.nerf import *
 from models.rendering import *
-
+from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
 
-# losses
-from losses import loss_dict
-
-# metrics
-from metrics import *
-
-# pytorch-lightning
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning import LightningModule, Trainer, seed_everything
-from pytorch_lightning.loggers import TestTubeLogger
-
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
+
 
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
-
         self.loss = loss_dict['color'](coef=1)
-
-        # self.embedding_xyz = Embedding(3, 10)
-        # self.embedding_dir = Embedding(3, 4)
-        # self.embeddings = {'xyz': self.embedding_xyz,
-        #                    'dir': self.embedding_dir}
-
-        self.embeddings = IPEmbedding(in_channels=3,N_freqs=16)
-
+        self.embeddings = IPEmbedding(in_channels=3, N_freqs=16)
         self.model = NeRF()
 
     def get_progress_bar_dict(self):
@@ -56,14 +44,14 @@ class NeRFSystem(LightningModule):
             rendered_ray_chunks = \
                 render_rays(self.model,
                             self.embeddings,
-                            rays[i:i+self.hparams.chunk],
+                            rays[i:i + self.hparams.chunk],
                             radius,
                             self.hparams.N_samples,
                             self.hparams.use_disp,
                             self.hparams.perturb,
                             self.hparams.noise_std,
                             self.hparams.N_importance,
-                            self.hparams.chunk, # chunk size is effective in val mode
+                            self.hparams.chunk,  # chunk size is effective in val mode
                             self.train_dataset.white_back)
 
             for k, v in rendered_ray_chunks.items():
@@ -95,7 +83,6 @@ class NeRFSystem(LightningModule):
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
-    
     def training_step(self, batch, batch_nb):
         rays, rgbs = batch['rays'], batch['rgbs']
         radius = self.train_dataset.radius
@@ -116,26 +103,26 @@ class NeRFSystem(LightningModule):
         return DataLoader(self.val_dataset,
                           shuffle=False,
                           num_workers=4,
-                          batch_size=1, # validate one image (H*W rays) at a time
+                          batch_size=1,  # validate one image (H*W rays) at a time
                           pin_memory=True)
 
     def validation_step(self, batch, batch_nb):
         rays, rgbs = batch['rays'], batch['rgbs']
-        rays = rays.squeeze() # (H*W, 3)
-        rgbs = rgbs.squeeze() # (H*W, 3)
+        rays = rays.squeeze()  # (H*W, 3)
+        rgbs = rgbs.squeeze()  # (H*W, 3)
         radius = batch['radius'].squeeze(0)
-        results = self(rays,radius)
+        results = self(rays, radius)
         log = {'val_loss': self.loss(results, rgbs)}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
 
         if batch_nb == 0:
             W, H = self.hparams.img_wh
-            img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
-            img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
-            depth = visualize_depth(results[f'depth_{typ}'].view(H, W)) # (3, H, W)
-            stack = torch.stack([img_gt, img, depth]) # (3, 3, H, W)
+            img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
+            img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
+            depth = visualize_depth(results[f'depth_{typ}'].view(H, W))  # (3, H, W)
+            stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
             self.logger.experiment.add_images('val/GT_pred_depth',
-                                               stack, self.global_step)
+                                              stack, self.global_step)
 
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
@@ -153,7 +140,7 @@ class NeRFSystem(LightningModule):
 def main(hparams):
     system = NeRFSystem(hparams)
     checkpoint_callback = \
-        ModelCheckpoint(filename=os.path.join(f'ckpts/{hparams.exp_name}','{epoch:d}'),
+        ModelCheckpoint(filename=os.path.join(f'ckpts/{hparams.exp_name}', '{epoch:d}'),
                         monitor='val/psnr',
                         mode='max',
                         save_top_k=5)
@@ -171,11 +158,11 @@ def main(hparams):
                       weights_summary=None,
                       progress_bar_refresh_rate=1,
                       gpus=hparams.num_gpus,
-                      accelerator='ddp' if hparams.num_gpus>1 else None,
+                      accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,
                       benchmark=True,
-                      profiler="simple" if hparams.num_gpus==1 else None,
-                      deterministic= True)
+                      profiler="simple" if hparams.num_gpus == 1 else None,
+                      deterministic=True)
 
     trainer.fit(system)
 
