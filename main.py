@@ -34,34 +34,30 @@ class NeRFSystem(LightningModule):
 
         self.loss = loss_dict['color'](coef=1)
 
-        self.embedding_xyz = Embedding(3, 10)
-        self.embedding_dir = Embedding(3, 4)
-        self.embeddings = {'xyz': self.embedding_xyz,
-                           'dir': self.embedding_dir}
+        # self.embedding_xyz = Embedding(3, 10)
+        # self.embedding_dir = Embedding(3, 4)
+        # self.embeddings = {'xyz': self.embedding_xyz,
+        #                    'dir': self.embedding_dir}
 
-        self.nerf_coarse = NeRF()
-        self.models = {'coarse': self.nerf_coarse}
-        load_ckpt(self.nerf_coarse, hparams.weight_path, 'nerf_coarse')
+        self.embeddings = IPEmbedding(in_channels=3,N_freqs=16)
 
-        if hparams.N_importance > 0:
-            self.nerf_fine = NeRF()
-            self.models['fine'] = self.nerf_fine
-            load_ckpt(self.nerf_fine, hparams.weight_path, 'nerf_fine')
+        self.model = NeRF()
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
         items.pop("v_num", None)
         return items
 
-    def forward(self, rays):
+    def forward(self, rays, radius):
         """Do batched inference on rays using chunk."""
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.hparams.chunk):
             rendered_ray_chunks = \
-                render_rays(self.models,
+                render_rays(self.model,
                             self.embeddings,
                             rays[i:i+self.hparams.chunk],
+                            radius,
                             self.hparams.N_samples,
                             self.hparams.use_disp,
                             self.hparams.perturb,
@@ -88,7 +84,7 @@ class NeRFSystem(LightningModule):
         self.val_dataset = dataset(split='val', **kwargs)
 
     def configure_optimizers(self):
-        self.optimizer = get_optimizer(self.hparams, self.models)
+        self.optimizer = get_optimizer(self.hparams, self.model)
         scheduler = get_scheduler(self.hparams, self.optimizer)
         return [self.optimizer], [scheduler]
 
@@ -99,16 +95,11 @@ class NeRFSystem(LightningModule):
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset,
-                          shuffle=False,
-                          num_workers=4,
-                          batch_size=1, # validate one image (H*W rays) at a time
-                          pin_memory=True)
     
     def training_step(self, batch, batch_nb):
         rays, rgbs = batch['rays'], batch['rgbs']
-        results = self(rays)
+        radius = self.train_dataset.radius
+        results = self(rays, radius)
         loss = self.loss(results, rgbs)
 
         with torch.no_grad():
@@ -121,34 +112,41 @@ class NeRFSystem(LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_nb):
-        rays, rgbs = batch['rays'], batch['rgbs']
-        rays = rays.squeeze() # (H*W, 3)
-        rgbs = rgbs.squeeze() # (H*W, 3)
-        results = self(rays)
-        log = {'val_loss': self.loss(results, rgbs)}
-        typ = 'fine' if 'rgb_fine' in results else 'coarse'
-    
-        if batch_nb == 0:
-            W, H = self.hparams.img_wh
-            img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
-            img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
-            depth = visualize_depth(results[f'depth_{typ}'].view(H, W)) # (3, H, W)
-            stack = torch.stack([img_gt, img, depth]) # (3, 3, H, W)
-            self.logger.experiment.add_images('val/GT_pred_depth',
-                                               stack, self.global_step)
-
-        psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
-        log['val_psnr'] = psnr_
-
-        return log
-
-    def validation_epoch_end(self, outputs):
-        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
-
-        self.log('val/loss', mean_loss)
-        self.log('val/psnr', mean_psnr, prog_bar=True)
+    # def val_dataloader(self):
+    #     return DataLoader(self.val_dataset,
+    #                       shuffle=False,
+    #                       num_workers=4,
+    #                       batch_size=1, # validate one image (H*W rays) at a time
+    #                       pin_memory=True)
+    #
+    # def validation_step(self, batch, batch_nb):
+    #     rays, rgbs = batch['rays'], batch['rgbs']
+    #     rays = rays.squeeze() # (H*W, 3)
+    #     rgbs = rgbs.squeeze() # (H*W, 3)
+    #     results = self(rays)
+    #     log = {'val_loss': self.loss(results, rgbs)}
+    #     typ = 'fine' if 'rgb_fine' in results else 'coarse'
+    #
+    #     if batch_nb == 0:
+    #         W, H = self.hparams.img_wh
+    #         img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
+    #         img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
+    #         depth = visualize_depth(results[f'depth_{typ}'].view(H, W)) # (3, H, W)
+    #         stack = torch.stack([img_gt, img, depth]) # (3, 3, H, W)
+    #         self.logger.experiment.add_images('val/GT_pred_depth',
+    #                                            stack, self.global_step)
+    #
+    #     psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
+    #     log['val_psnr'] = psnr_
+    #
+    #     return log
+    #
+    # def validation_epoch_end(self, outputs):
+    #     mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+    #     mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
+    #
+    #     self.log('val/loss', mean_loss)
+    #     self.log('val/psnr', mean_psnr, prog_bar=True)
 
 
 def main(hparams):

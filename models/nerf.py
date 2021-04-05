@@ -38,44 +38,65 @@ class Embedding(nn.Module):
         return torch.cat(out, -1)
 
 
+class IPEmbedding(nn.Module):
+    def __init__(self, in_channels, N_freqs):
+        super(IPEmbedding, self).__init__()
+        self.N_freqs = N_freqs
+        self.in_channels = in_channels
+        self.funcs = [torch.sin, torch.cos]
+        self.out_channels = in_channels*(len(self.funcs)*N_freqs)
+        self.freq_bands = torch.linspace(0, N_freqs-1, N_freqs)
+
+    def forward(self, mean, cov_diag):
+        """
+        Inputs:
+            x: (B, self.in_channels)
+
+        Outputs:
+            out: (B, self.out_channels)
+        """
+        out = []
+        for freq in self.freq_bands:
+            for func in self.funcs:
+                y = torch.cat([2**freq * mean])
+                w = torch.cat([torch.exp(-0.5 * 4**freq * cov_diag)])
+                out += [func(y) * w]
+
+        return torch.cat(out, -1)
+
 class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
-                 in_channels_xyz=63, in_channels_dir=27, 
+                 in_channels_xyzd=96,
                  skips=[4]):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
-        in_channels_xyz: number of input channels for xyz (3+3*10*2=63 by default)
-        in_channels_dir: number of input channels for direction (3+3*4*2=27 by default)
+        in_channels_xyzd: number of input channels for xyz (2*16*3 = 96 by default)
         skips: add skip connection in the Dth layer
         """
         super(NeRF, self).__init__()
         self.D = D
         self.W = W
-        self.in_channels_xyz = in_channels_xyz
-        self.in_channels_dir = in_channels_dir
+        self.in_channels_xyzd = in_channels_xyzd
         self.skips = skips
 
         # xyz encoding layers
         for i in range(D):
             if i == 0:
-                layer = nn.Linear(in_channels_xyz, W)
+                layer = nn.Linear(in_channels_xyzd, W)
             elif i in skips:
-                layer = nn.Linear(W+in_channels_xyz, W)
+                layer = nn.Linear(W+in_channels_xyzd, W)
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))
             setattr(self, f"xyz_encoding_{i+1}", layer)
-        self.xyz_encoding_final = nn.Linear(W, W)
-
-        # direction encoding layers
-        self.dir_encoding = nn.Sequential(
-                                nn.Linear(W+in_channels_dir, W//2),
-                                nn.ReLU(True))
 
         # output layers
-        self.sigma = nn.Linear(W, 1)
+        self.sigma = nn.Sequential(nn.Linear(W, W//2),
+                                   nn.Linear(W //2, 1))
+
+        self.xyz_encoding_final = nn.Linear(W, W//2)
         self.rgb = nn.Sequential(
                         nn.Linear(W//2, 3),
                         nn.Sigmoid())
@@ -97,16 +118,11 @@ class NeRF(nn.Module):
             else:
                 out: (B, 4), rgb and sigma
         """
-        if not sigma_only:
-            input_xyz, input_dir = \
-                torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
-        else:
-            input_xyz = x
 
-        xyz_ = input_xyz
+        xyz_ = x
         for i in range(self.D):
             if i in self.skips:
-                xyz_ = torch.cat([input_xyz, xyz_], -1)
+                xyz_ = torch.cat([x, xyz_], -1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma = self.sigma(xyz_)
@@ -114,10 +130,7 @@ class NeRF(nn.Module):
             return sigma
 
         xyz_encoding_final = self.xyz_encoding_final(xyz_)
-
-        dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
-        dir_encoding = self.dir_encoding(dir_encoding_input)
-        rgb = self.rgb(dir_encoding)
+        rgb = self.rgb(xyz_encoding_final)
 
         out = torch.cat([rgb, sigma], -1)
 

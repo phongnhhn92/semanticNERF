@@ -1,4 +1,4 @@
-import torch
+import torch,math
 from kornia import create_meshgrid
 
 
@@ -14,14 +14,30 @@ def get_ray_directions(H, W, focal):
     Outputs:
         directions: (H, W, 3), the direction of the rays in camera coordinate
     """
+    # From jaxNERF
+    # import numpy as np
+    # pixel_center = 0.5
+    # x, y = np.meshgrid(  # pylint: disable=unbalanced-tuple-unpacking
+    #     np.arange(400, dtype=np.float32) + pixel_center,  # X-Axis (columns)
+    #     np.arange(400, dtype=np.float32) + pixel_center,  # Y-Axis (rows)
+    #     indexing="xy")
     grid = create_meshgrid(H, W, normalized_coordinates=False)[0]
     i, j = grid.unbind(-1)
     # the direction here is without +0.5 pixel centering as calibration is not so accurate
     # see https://github.com/bmild/nerf/issues/24
+    i += 0.5
+    j += 0.5
     directions = \
         torch.stack([(i-W/2)/focal, -(j-H/2)/focal, -torch.ones_like(i)], -1) # (H, W, 3)
 
     return directions
+
+def get_radius(c2w):
+    radius_cam = torch.ones(1, 3)
+    radius_world = radius_cam @ c2w[:, :3].T
+    radius_world = torch.norm(radius_world, dim=-1)
+    # scaled to be 1 to match the variance of pixel's footprint
+    return radius_world * 2 / math.sqrt(12)
 
 
 def get_rays(directions, c2w):
@@ -39,6 +55,8 @@ def get_rays(directions, c2w):
         rays_d: (H*W, 3), the normalized direction of the rays in world coordinate
     """
     # Rotate ray directions from camera coordinate to the world coordinate
+
+
     rays_d = directions @ c2w[:, :3].T # (H, W, 3)
     rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
     # The origin of all rays is the camera origin in world coordinate

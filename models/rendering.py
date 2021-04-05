@@ -47,9 +47,10 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
     return samples
 
 
-def render_rays(models,
+def render_rays(model,
                 embeddings,
                 rays,
+                radius,
                 N_samples=64,
                 use_disp=False,
                 perturb=0,
@@ -106,21 +107,17 @@ def render_rays(models,
         # Perform model inference to get rgb and raw sigma
         B = xyz_.shape[0]
         out_chunks = []
-        if typ=='coarse' and test_time and 'fine' in models:
+        if typ=='coarse' and test_time:
             for i in range(0, B, chunk):
-                xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-                out_chunks += [model(xyz_embedded, sigma_only=True)]
+                xyzd_IPE_chunk = xyz_[i:i+chunk]
+                out_chunks += [model(xyzd_IPE_chunk, sigma_only=True)]
 
             out = torch.cat(out_chunks, 0)
             sigmas = rearrange(out, '(n1 n2) 1 -> n1 n2', n1=N_rays, n2=N_samples_)
         else: # infer rgb and sigma and others
-            dir_embedded_ = repeat(dir_embedded, 'n1 c -> (n1 n2) c', n2=N_samples_)
-                            # (N_rays*N_samples_, embed_dir_channels)
             for i in range(0, B, chunk):
-                xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-                xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded_[i:i+chunk]], 1)
-                out_chunks += [model(xyzdir_embedded, sigma_only=False)]
+                xyzd_IPE_chunk = xyz_[i:i+chunk]
+                out_chunks += [model(xyzd_IPE_chunk, sigma_only=False)]
 
             out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
@@ -135,10 +132,10 @@ def render_rays(models,
 
         # compute alpha by the formula (3)
         noise = torch.randn_like(sigmas) * noise_std
-        alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
+        #alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
 
         # softplus: f(x) = ln(1+e^x)
-        #alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
+        alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
 
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, 1-a1, 1-a2, ...]
@@ -150,7 +147,7 @@ def render_rays(models,
         results[f'weights_{typ}'] = weights
         results[f'opacity_{typ}'] = weights_sum
         results[f'z_vals_{typ}'] = z_vals
-        if test_time and typ == 'coarse' and 'fine' in models:
+        if test_time and typ == 'coarse':
             return
 
         rgb_map = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1')*rgbs, 'n1 n2 c -> n1 c', 'sum')
@@ -164,40 +161,51 @@ def render_rays(models,
 
         return
 
-    embedding_xyz, embedding_dir = embeddings['xyz'], embeddings['dir']
+    #embedding_xyz, embedding_dir = embeddings['xyz'], embeddings['dir']
 
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6] # both (N_rays, 3)
     near, far = rays[:, 6:7], rays[:, 7:8] # both (N_rays, 1)
     # Embed direction
-    dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d)) # (N_rays, embed_dir_channels)
+    #dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d)) # (N_rays, embed_dir_channels)
 
-    rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
-    rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
+    #rays_o = rearrange(rays_o, 'n1 c -> n1 1 c')
+    #rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
 
     # Sample depth points
-    z_steps = torch.linspace(0, 1, N_samples, device=rays.device) # (N_samples)
+    z_steps = torch.linspace(0, 1, N_samples+1, device=rays.device) # (N_samples)
     if not use_disp: # use linear sampling in depth space
         z_vals = near * (1-z_steps) + far * z_steps
     else: # use linear sampling in disparity space
         z_vals = 1/(1/near * (1-z_steps) + 1/far * z_steps)
 
-    z_vals = z_vals.expand(N_rays, N_samples)
-    
     if perturb > 0: # perturb sampling depths (z_vals)
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
         # get intervals between samples
         upper = torch.cat([z_vals_mid, z_vals[: ,-1:]], -1)
         lower = torch.cat([z_vals[: ,:1], z_vals_mid], -1)
-        
+
         perturb_rand = perturb * torch.rand_like(z_vals)
         z_vals = lower + (upper - lower) * perturb_rand
 
-    xyz_coarse = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
+    t0,t1 = z_vals[: ,:-1], z_vals[: ,1:]
+    c, d = (t0 + t1) / 2, (t1 - t0) / 2
+    t_mean = c + (2 * c * d ** 2) / (3 * c ** 2 + d ** 2)
+    t_var = (d ** 2) / 3 - (4 / 15) * ((d ** 4 * (12 * c ** 2 - d ** 2)) / (3 * c ** 2 + d ** 2) ** 2)
+    rad = repeat(radius, 'b -> b c', c=c.shape[-1]).type_as(c)
+    r_var = rad ** 2 * ((c ** 2) / 4 + (5 / 12) * d ** 2 - (4 / 15) * (d ** 4) / (3 * c ** 2 + d ** 2))
+    mean = rays_d[..., None, :] * t_mean[..., None]
+    null_outer_diag = 1 - (rays_d ** 2) / torch.sum(rays_d ** 2,-1,keepdim=True)
+    cov_diag = (t_var[..., None] * (rays_d ** 2)[..., None, :]
+                + r_var[..., None] * null_outer_diag[..., None, :])
+
+    muy = mean + rays_o[..., None, :]
+
+    IPEmbeded_coarse = embeddings(muy,cov_diag)
 
     results = {}
-    inference(results, models['coarse'], 'coarse', xyz_coarse, z_vals, test_time, **kwargs)
+    inference(results, model, 'coarse', IPEmbeded_coarse, z_vals, test_time, **kwargs)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
@@ -210,6 +218,6 @@ def render_rays(models,
 
         xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
-        inference(results, models['fine'], 'fine', xyz_fine, z_vals, test_time, **kwargs)
+        inference(results, model, 'fine', xyz_fine, z_vals, test_time, **kwargs)
 
     return results

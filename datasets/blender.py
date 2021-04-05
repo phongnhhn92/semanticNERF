@@ -44,11 +44,13 @@ class BlenderDataset(Dataset):
             self.poses = []
             self.all_rays = []
             self.all_rgbs = []
+            rad = []
             for frame in self.meta['frames']:
                 pose = np.array(frame['transform_matrix'])[:3, :4]
                 self.poses += [pose]
                 c2w = torch.FloatTensor(pose)
-
+                if hasattr(self,'radius') is False:
+                    self.radius = get_radius(c2w)
                 image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
                 self.image_paths += [image_path]
                 img = Image.open(image_path)
@@ -81,7 +83,7 @@ class BlenderDataset(Dataset):
     def __getitem__(self, idx):
         if self.split == 'train': # use data in the buffers
             sample = {'rays': self.all_rays[idx],
-                      'rgbs': self.all_rgbs[idx]}
+                      'rgbs': self.all_rgbs[idx],}
 
         else: # create data for each image separately
             frame = self.meta['frames'][idx]

@@ -14,7 +14,7 @@ def get_opts():
     parser.add_argument('--spheric_poses', default=False, action="store_true",
                         help='whether images are taken in spheric poses (for llff)')
 
-    parser.add_argument('--N_samples', type=int, default=64,
+    parser.add_argument('--N_samples', type=int, default=128,
                         help='number of coarse samples')
     parser.add_argument('--N_importance', type=int, default=128,
                         help='number of additional fine samples')
