@@ -20,7 +20,16 @@ cv2
 ```
 
 #### Training:
-LLFF dataset
+Blender dataset (Mip-NERF is optimized for this dataset, not LLFF)
+```
+python main.py --dataset_name blender 
+--root_dir /media/phong/Data2TB/dataset/NERF/nerf_synthetic/nerf_synthetic/lego 
+--N_importance 128 --img_wh 800 800 --noise_std 0 --num_epochs 16 --batch_size 4096 
+--optimizer adam --lr 5e-4 --lr_scheduler steplr --decay_step 2 4 --decay_gamma 0.5 
+--exp_name exp_lego
+```
+
+LLFF dataset (not tested yet)
 ```
 python main.py --dataset_name llff 
 --root_dir /media/phong/Data2TB/dataset/NERF/nerf_llff_data/flower 
@@ -29,14 +38,5 @@ python main.py --dataset_name llff
 --optimizer adam --lr 5e-4 --lr_scheduler steplr 
 --decay_step 2 4 8 --decay_gamma 0.5 
 --exp_name exp_flower
-```
-
-#### Eval and generate novel views:
-```
-python eval.py 
---dataset_name carla 
---root_dir /media/phong/Data2TB/dataset/carla/carla/carla_phong_2/Town01/episode_00001/000000 
---split test --N_importance 64 --scene_name carla --img_wh 800 600 
---ckpt_path /home/phong/PycharmProjects/NERF_semantic/logs/exp_carla/version_0/checkpoints/ckpts/exp_carla/epoch=15.ckpt
 ```
 
