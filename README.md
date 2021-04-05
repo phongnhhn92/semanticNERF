@@ -1,12 +1,10 @@
-# semanticNERF
+# MiP-NERF
 
 #### 05-04-2020:
 Starting point: original MiP-NERF
 
 #### Dataset:
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
-
-Carla dataset: [link](https://drive.google.com/file/d/1ZYIlupT8-Zm7w8G4br2ZoyJfKEEAyEK-/view?ts=6030149b)
 
 #### Prerequisite:
 ```
