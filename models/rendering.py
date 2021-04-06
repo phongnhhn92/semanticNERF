@@ -126,9 +126,10 @@ def render_rays(model,
             
         # Convert these values using volume rendering (Section 4)
         cone_midpoints = 0.5 * (z_vals[:, 1:] + z_vals[:, :-1])
-        deltas = cone_midpoints[:, 1:] - cone_midpoints[:, :-1]  # (N_rays, N_samples_-1)
-        delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
-        deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+        #deltas = cone_midpoints[:, 1:] - cone_midpoints[:, :-1]  # (N_rays, N_samples_-1)
+        deltas = z_vals[:, 1:] - z_vals[:, :-1]  # (N_rays, N_samples_-1)
+        #delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
+        #deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
 
         # compute alpha by the formula (3)
         noise = torch.randn_like(sigmas) * noise_std
@@ -215,12 +216,12 @@ def render_rays(model,
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
 
         # 2-tap max filter
-        w_k,w_k_prev,w_k_next = results['weights_coarse'][:,1:-1], results['weights_coarse'][:,:-2], \
-                                    results['weights_coarse'][:,2:]
+        #w_k,w_k_prev,w_k_next = results['weights_coarse'][:,1:-1], results['weights_coarse'][:,:-2], \
+        #                            results['weights_coarse'][:,2:]
         # alpha  = 0.01
-        weight_c = 0.5 * (torch.maximum(w_k_prev,w_k)+ torch.maximum(w_k,w_k_next)) + 0.01
+        #weight_c = 0.5 * (torch.maximum(w_k_prev,w_k)+ torch.maximum(w_k,w_k_next)) + 0.01
 
-        z_vals_ = sample_pdf(z_vals_mid, weight_c.detach(),
+        z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1],
                              N_importance, det=(perturb==0))
                   # detach so that grad doesn't propogate to weights_coarse from here
 
