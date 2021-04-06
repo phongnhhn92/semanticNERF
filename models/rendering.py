@@ -216,19 +216,19 @@ def render_rays(model,
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
 
         # 2-tap max filter
-        #w_k,w_k_prev,w_k_next = results['weights_coarse'][:,1:-1], results['weights_coarse'][:,:-2], \
-        #                            results['weights_coarse'][:,2:]
+        w_k,w_k_prev,w_k_next = results['weights_coarse'][:,1:-1], results['weights_coarse'][:,:-2], \
+                                    results['weights_coarse'][:,2:]
         # alpha  = 0.01
-        #weight_c = 0.5 * (torch.maximum(w_k_prev,w_k)+ torch.maximum(w_k,w_k_next)) + 0.01
+        weight_c = 0.5 * (torch.maximum(w_k_prev,w_k)+ torch.maximum(w_k,w_k_next)) + 0.01
 
-        z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1],
+        z_vals_fine = sample_pdf(z_vals_mid, weight_c,
                              N_importance, det=(perturb==0))
                   # detach so that grad doesn't propogate to weights_coarse from here
 
-        z_vals = torch.sort(z_vals_, -1)[0]
-        mean, cov_diag = cast_cone(rays_o, rays_d, z_vals)
+        z_vals_fine = torch.sort(z_vals_fine, -1)[0]
+        mean_fine, cov_diag_fine = cast_cone(rays_o, rays_d, z_vals_fine)
         # IPE input to MLP
-        IPEmbeded_fine = embeddings(mean, cov_diag)
-        inference(results, model, 'fine', IPEmbeded_fine, z_vals, test_time, **kwargs)
+        IPEmbeded_fine = embeddings(mean_fine, cov_diag_fine)
+        inference(results, model, 'fine', IPEmbeded_fine, z_vals_fine, test_time, **kwargs)
 
     return results

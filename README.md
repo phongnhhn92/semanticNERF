@@ -1,10 +1,11 @@
 # Unofficial Pytorch implementation of [Mip-NeRF](https://jonbarron.info/mipnerf/): A Multiscale Representation for Anti-Aliasing Neural Radiance Fields
 
-
 #### Dataset:
+
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
 
 #### Prerequisite:
+
 ```
 Pytorch 1.7.1
 Pytorch-Lightning 1.2.0
@@ -16,7 +17,9 @@ cv2
 ```
 
 #### Training:
+
 Blender dataset (Mip-NERF is optimized for this dataset, not LLFF)
+
 ```
 python main.py --dataset_name blender 
 --root_dir /media/phong/Data2TB/dataset/NERF/nerf_synthetic/nerf_synthetic/lego 
@@ -26,6 +29,7 @@ python main.py --dataset_name blender
 ```
 
 LLFF dataset (not tested yet)
+
 ```
 python main.py --dataset_name llff 
 --root_dir /media/phong/Data2TB/dataset/NERF/nerf_llff_data/flower 
@@ -37,4 +41,6 @@ python main.py --dataset_name llff
 ```
 
 #### Acknowledgement:
-The code is heavily borrowed from the NERF Pytorch [implementation](https://github.com/kwea123/nerf_pl/tree/master) of [kwea123](https://github.com/kwea123).
+
+The code is heavily borrowed from the NERF Pytorch [implementation](https://github.com/kwea123/nerf_pl/tree/master)
+of [kwea123](https://github.com/kwea123).
