@@ -138,10 +138,8 @@ def render_rays(model,
         # softplus: f(x) = ln(1+e^x)
         alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas + noise))  # (N_rays, N_samples_)
 
-        alphas_shifted = \
-            torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, 1-a1, 1-a2, ...]
-        weights = \
-            alphas * torch.cumprod(alphas_shifted[:, :-1], -1) # (N_rays, N_samples_)
+        alphas_shifted = 1-alphas+1e-10 # [1, 1-a1, 1-a2, ...]
+        weights =  alphas * torch.cumprod(alphas_shifted, -1) # (N_rays, N_samples_)
         weights_sum = reduce(weights, 'n1 n2 -> n1', 'sum') # (N_rays), the accumulated opacity along the rays
                                                             # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
 
