@@ -2,6 +2,7 @@ import os
 from collections import defaultdict
 
 from pytorch_lightning import LightningModule, Trainer, seed_everything
+from pytorch_lightning.plugins import DDPPlugin
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TestTubeLogger
@@ -162,6 +163,7 @@ def main(hparams):
                       num_sanity_val_steps=1,
                       benchmark=True,
                       profiler="simple" if hparams.num_gpus == 1 else None,
+                      plugins=DDPPlugin(find_unused_parameters=False if hparams.num_gpus > 1 else True),
                       deterministic=True)
 
     trainer.fit(system)
