@@ -75,7 +75,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyzd=96,
-                 skips=[]):
+                 skips=[4]):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
