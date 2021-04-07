@@ -25,8 +25,8 @@ def get_ray_directions(H, W, focal):
     i, j = grid.unbind(-1)
     # the direction here is without +0.5 pixel centering as calibration is not so accurate
     # see https://github.com/bmild/nerf/issues/24
-    #i += 0.5
-    #j += 0.5
+    i += 0.5
+    j += 0.5
     directions = \
         torch.stack([(i-W/2)/focal, -(j-H/2)/focal, -torch.ones_like(i)], -1) # (H, W, 3)
 
