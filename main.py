@@ -29,7 +29,7 @@ class NeRFSystem(LightningModule):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
         self.loss = ColorLoss()
-        self.embeddings = IPEmbedding(in_channels=3, N_freqs=5)
+        self.embeddings = IPEmbedding(in_channels=3, N_freqs=self.hparams.N_freq)
         self.model = NeRF(in_channels_xyzd=self.embeddings.out_channels)
 
     def get_progress_bar_dict(self):

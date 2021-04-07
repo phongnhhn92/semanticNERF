@@ -18,6 +18,8 @@ def get_opts():
                         help='number of coarse samples')
     parser.add_argument('--N_importance', type=int, default=128,
                         help='number of additional fine samples')
+    parser.add_argument('--N_freq', type=int, default=16,
+                        help='L parameter of the IPE ')
     parser.add_argument('--use_disp', default=False, action="store_true",
                         help='use disparity depth sampling')
     parser.add_argument('--perturb', type=float, default=1.0,
