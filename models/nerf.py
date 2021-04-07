@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True):
         """
@@ -11,12 +12,12 @@ class Embedding(nn.Module):
         self.N_freqs = N_freqs
         self.in_channels = in_channels
         self.funcs = [torch.sin, torch.cos]
-        self.out_channels = in_channels*(len(self.funcs)*N_freqs+1)
+        self.out_channels = in_channels * (len(self.funcs) * N_freqs + 1)
 
         if logscale:
-            self.freq_bands = 2**torch.linspace(0, N_freqs-1, N_freqs)
+            self.freq_bands = 2 ** torch.linspace(0, N_freqs - 1, N_freqs)
         else:
-            self.freq_bands = torch.linspace(1, 2**(N_freqs-1), N_freqs)
+            self.freq_bands = torch.linspace(1, 2 ** (N_freqs - 1), N_freqs)
 
     def forward(self, x):
         """
@@ -33,7 +34,7 @@ class Embedding(nn.Module):
         out = [x]
         for freq in self.freq_bands:
             for func in self.funcs:
-                out += [func(freq*x)]
+                out += [func(freq * x)]
 
         return torch.cat(out, -1)
 
@@ -48,8 +49,9 @@ class IPEmbedding(nn.Module):
         self.N_freqs = N_freqs
         self.in_channels = in_channels
         self.funcs = [torch.sin, torch.cos]
-        self.out_channels = in_channels*(len(self.funcs)*N_freqs)
-        self.freq_bands = torch.linspace(0, N_freqs-1, N_freqs)
+        self.out_channels = in_channels * (len(self.funcs) * N_freqs)
+        self.freq_bands = 2 ** torch.linspace(0, N_freqs - 1, N_freqs)
+        self.freq_bands2 = 4 ** torch.linspace(0, N_freqs - 1, N_freqs)
 
     def forward(self, mean, cov_diag):
         """
@@ -60,13 +62,14 @@ class IPEmbedding(nn.Module):
             out: (B, self.out_channels)
         """
         out = []
-        for freq in self.freq_bands:
+        for freq1, freq2 in zip(self.freq_bands, self.freq_bands2):
             for func in self.funcs:
-                y = torch.cat([2**freq * mean])
-                w = torch.cat([torch.exp(-0.5 * 4**freq * cov_diag)])
+                y = torch.cat([freq1 * mean])
+                w = torch.cat([torch.exp(-0.5 * freq2 * cov_diag)])
                 out += [func(y) * w]
 
         return torch.cat(out, -1)
+
 
 class NeRF(nn.Module):
     def __init__(self,
@@ -90,20 +93,20 @@ class NeRF(nn.Module):
             if i == 0:
                 layer = nn.Linear(in_channels_xyzd, W)
             elif i in skips:
-                layer = nn.Linear(W+in_channels_xyzd, W)
+                layer = nn.Linear(W + in_channels_xyzd, W)
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"xyz_encoding_{i+1}", layer)
+            setattr(self, f"xyz_encoding_{i + 1}", layer)
 
         # output layers
-        self.sigma = nn.Sequential(nn.Linear(W, W//2),
-                                   nn.Linear(W //2, 1))
+        self.sigma = nn.Sequential(nn.Linear(W, W // 2),
+                                   nn.Linear(W // 2, 1))
 
-        self.xyz_encoding_final = nn.Linear(W, W//2)
+        self.xyz_encoding_final = nn.Linear(W, W // 2)
         self.rgb = nn.Sequential(
-                        nn.Linear(W//2, 3),
-                        nn.Sigmoid())
+            nn.Linear(W // 2, 3),
+            nn.Sigmoid())
 
     def forward(self, x, sigma_only=False):
         """
@@ -127,7 +130,7 @@ class NeRF(nn.Module):
         for i in range(self.D):
             if i in self.skips:
                 xyz_ = torch.cat([x, xyz_], -1)
-            xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
+            xyz_ = getattr(self, f"xyz_encoding_{i + 1}")(xyz_)
 
         sigma = self.sigma(xyz_)
         if sigma_only:

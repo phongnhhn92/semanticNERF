@@ -1,9 +1,8 @@
 from torch import nn
 
 class ColorLoss(nn.Module):
-    def __init__(self, coef=1):
+    def __init__(self):
         super().__init__()
-        self.coef = coef
         self.loss = nn.MSELoss(reduction='mean')
 
     def forward(self, inputs, targets,gamma = 0.1):
