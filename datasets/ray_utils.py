@@ -34,6 +34,8 @@ def get_ray_directions(H, W, focal):
 
 def get_radius(c2w):
     radius_cam = torch.ones(1, 3)
+    #edit z
+    radius_cam[:,-1] = 0.0
     radius_world = radius_cam @ c2w[:, :3].T
     radius_world = torch.norm(radius_world, dim=-1)
     # scaled to be 1 to match the variance of pixel's footprint
