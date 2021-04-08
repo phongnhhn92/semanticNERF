@@ -1,26 +1,6 @@
 import torch
 from torch import nn, einsum
-import torch.nn.functional as F
-
-from einops import rearrange, repeat
-from einops.layers.torch import Rearrange
-
-# helper methods
-
-def group_dict_by_key(cond, d):
-    return_val = [dict(), dict()]
-    for key in d.keys():
-        match = bool(cond(key))
-        ind = int(not match)
-        return_val[ind][key] = d[key]
-    return (*return_val,)
-
-def group_by_key_prefix_and_remove_prefix(prefix, d):
-    kwargs_with_prefix, kwargs = group_dict_by_key(lambda x: x.startswith(prefix), d)
-    kwargs_without_prefix = dict(map(lambda x: (x[0][len(prefix):], x[1]), tuple(kwargs_with_prefix.items())))
-    return kwargs_without_prefix, kwargs
-
-# classes
+from einops import rearrange
 
 class PreNorm(nn.Module):
     def __init__(self, dim, fn):
