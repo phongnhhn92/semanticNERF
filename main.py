@@ -20,6 +20,9 @@ from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
 
+#Sample rays
+from datasets.ray_utils import *
+
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
 _DEBUG = True
@@ -28,7 +31,6 @@ class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
-
         self.loss = loss_dict['color'](coef=1)
 
         self.embedding_xyz = Embedding(3, 10)
@@ -50,30 +52,9 @@ class NeRFSystem(LightningModule):
         items.pop("v_num", None)
         return items
 
-    def forward(self, rays, segs):
-        """Do batched inference on rays using chunk."""
-        B = rays.shape[0]
-        results = defaultdict(list)
-        for i in range(0, B, self.hparams.chunk):
-            rendered_ray_chunks = \
-                render_rays(self.models,
-                            self.embeddings,
-                            rays[i:i + self.hparams.chunk],
-                            segs[i:i + self.hparams.chunk],
-                            self.hparams.N_samples,
-                            self.hparams.use_disp,
-                            self.hparams.perturb,
-                            self.hparams.noise_std,
-                            self.hparams.N_importance,
-                            self.hparams.chunk,  # chunk size is effective in val mode
-                            self.train_dataset.white_back)
+    def forward(self, data):
 
-            for k, v in rendered_ray_chunks.items():
-                results[k] += [v]
-
-        for k, v in results.items():
-            results[k] = torch.cat(v, 0)
-        return results
+        return None
 
     def setup(self, stage):
         dataset = dataset_dict[self.hparams.dataset_name]

@@ -7,7 +7,7 @@ import numpy as np
 from skimage import io
 from torch.utils.data import Dataset
 from torchvision import transforms
-
+from datasets.ray_utils import *
 
 class CarlaGVSDataset(Dataset):
     def __init__(self, opts,split):
@@ -111,6 +111,12 @@ class CarlaGVSDataset(Dataset):
         data_dict['stereo_baseline'] = torch.Tensor([self.stereo_baseline])
         # Load style image, if passed, else the input will serve as style
         data_dict['style_img'] = input_img.clone()
+
+        # Sample training rays of the target pose
+        focal = k_matrix[0, 0]
+        directions = get_ray_directions(self.height, self.width, focal)
+        rays_o, rays_d = get_rays(directions, target_pose)
+        # TODO: ray sampling
         data_dict = {k: v.float()
                      for k, v in data_dict.items() if not (k is None)}
         return data_dict
