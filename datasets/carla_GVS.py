@@ -10,11 +10,12 @@ from torchvision import transforms
 from datasets.ray_utils import *
 
 class CarlaGVSDataset(Dataset):
-    def __init__(self, opts,split):
+    def __init__(self, opts,split,numberOfRays = 128):
         super(CarlaGVSDataset,self).__init__()
 
         self.opts = opts
         self.split = split
+        self.numberOfRays = numberOfRays
         self.camera_groups = ['ForwardCameras', 'SideCameras', 'HorizontalCameras']
         # Transformations
         self.to_tensor = transforms.Compose([transforms.ToTensor()])
@@ -116,7 +117,22 @@ class CarlaGVSDataset(Dataset):
         focal = k_matrix[0, 0]
         directions = get_ray_directions(self.height, self.width, focal)
         rays_o, rays_d = get_rays(directions, target_pose)
-        # TODO: ray sampling
+        # Use NDC for now
+        near, far = 0, 1
+        rays_o, rays_d = get_ndc_rays(self.height, self.width,
+                                      focal, 1.0, rays_o, rays_d)
+        # Teddy: If we dont use NDC then I need to know the near and far depth plane.
+        # Can we find it based on the GT target_disp ?
+        cam_rays = torch.cat([rays_o, rays_d,
+                          near * torch.ones_like(rays_o[:, :1]),
+                          far * torch.ones_like(rays_o[:, :1])],1)
+        rays_rgb = input_img.view(3,-1).permute(1,0)
+        pix_inds = torch.randint(0, rays_rgb.shape[0], (self.numberOfRays,))
+
+        # Randomly sample rays
+        data_dict['target_rays'] = cam_rays[pix_inds]
+        data_dict['target_rgb_gt'] = rays_rgb[pix_inds]
+
         data_dict = {k: v.float()
                      for k, v in data_dict.items() if not (k is None)}
         return data_dict
