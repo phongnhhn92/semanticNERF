@@ -54,11 +54,10 @@ def render_rays(models,
                 depths,
                 near,
                 far,
-                N_samples=64,
-                use_disp=False,
+                N_planes,
+                N_importance,
                 perturb=0,
                 noise_std=1,
-                N_importance=0,
                 chunk=1024 * 32,
                 test_time=False,
                 **kwargs
@@ -183,11 +182,12 @@ def render_rays(models,
     rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
 
     # Sample depth points
-    z_vals = 1 / torch.linspace(1 / near, 1 / far, N_samples)
+    z_vals = 1 / torch.linspace(1 / near, 1 / far, N_planes)
     z_vals = rearrange(z_vals,'n1 -> 1 n1').to(rays_o.device)
     z_vals = repeat(z_vals,'1 n1 -> r n1', r = N_rays)
 
-    # TODO: sample more z_vals based on depths
+    # TODO: sample more z_vals based on depths and N_importance
+
     if perturb > 0:  # perturb sampling depths (z_vals)
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
         # get intervals between samples

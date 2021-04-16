@@ -99,11 +99,10 @@ class NeRFSystem(LightningModule):
                             all_depths[i:i + self.hparams.chunk],
                             self.hparams.near_plane,
                             self.hparams.far_plane,
-                            self.hparams.N_samples,
-                            self.hparams.use_disp,
+                            self.hparams.num_planes,
+                            self.hparams.N_importance,
                             self.hparams.perturb,
                             self.hparams.noise_std,
-                            self.hparams.N_importance,
                             self.hparams.chunk,  # chunk size is effective in val mode
                             )
 
