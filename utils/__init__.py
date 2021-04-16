@@ -23,6 +23,7 @@ def get_parameters(models):
 
 def get_optimizer(hparams, models):
     eps = 1e-8
+    # TODO: different learning rate for 2 networks
     parameters = get_parameters(models)
     if hparams.optimizer == 'sgd':
         optimizer = SGD(parameters, lr=hparams.lr, 

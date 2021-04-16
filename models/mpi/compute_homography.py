@@ -7,7 +7,7 @@ class ComputeHomography(nn.Module):
     def __init__(self, opts):
         super(ComputeHomography, self).__init__()
         self.opts = opts
-        self.h, self.w = opts.height, opts.width
+        self.h, self.w = opts.img_wh[1], opts.img_wh[0]
         self.num_depths = opts.num_planes
         self.depth_proposals = 1 / torch.linspace(1 / opts.near_plane, 1 / opts.far_plane, opts.num_planes)
         self.depth_proposals = self.depth_proposals.view(opts.num_planes)

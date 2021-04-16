@@ -51,13 +51,15 @@ def render_rays(models,
                 embeddings,
                 rays,
                 segs,
+                depths,
+                near,
+                far,
                 N_samples=64,
                 use_disp=False,
                 perturb=0,
                 noise_std=1,
                 N_importance=0,
                 chunk=1024 * 32,
-                white_back=False,
                 test_time=False,
                 **kwargs
                 ):
@@ -161,10 +163,6 @@ def render_rays(models,
         features_ = reduce(rearrange(weights, 'n1 n2 -> n1 n2 1') * features, 'n1 n2 c -> n1 c', 'sum')
         depth_map = reduce(weights * z_vals, 'n1 n2 -> n1', 'sum')
 
-
-        if white_back:
-            rgb_map += 1 - weights_sum.unsqueeze(1)
-
         results[f'rgb_{typ}'] = rgb_map
         results[f'feature_{typ}'] = features_
         results[f'depth_{typ}'] = depth_map
@@ -178,7 +176,6 @@ def render_rays(models,
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
-    near, far = rays[:, 6:7], rays[:, 7:8]  # both (N_rays, 1)
     # Embed direction
     dir_embedded = embedding_dir(kwargs.get('view_dir', rays_d))  # (N_rays, embed_dir_channels)
 
@@ -186,13 +183,11 @@ def render_rays(models,
     rays_d = rearrange(rays_d, 'n1 c -> n1 1 c')
 
     # Sample depth points
-    z_steps = torch.linspace(0, 1, N_samples, device=rays.device)  # (N_samples)
-    if not use_disp:  # use linear sampling in depth space
-        z_vals = near * (1 - z_steps) + far * z_steps
-    else:  # use linear sampling in disparity space
-        z_vals = 1 / (1 / near * (1 - z_steps) + 1 / far * z_steps)
+    z_vals = 1 / torch.linspace(1 / near, 1 / far, N_samples)
+    z_vals = rearrange(z_vals,'n1 -> 1 n1').to(rays_o.device)
+    z_vals = repeat(z_vals,'1 n1 -> r n1', r = N_rays)
 
-    z_vals = z_vals.expand(N_rays, N_samples)
+    # TODO: sample more z_vals based on depths
 
     if perturb > 0:  # perturb sampling depths (z_vals)
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
@@ -209,17 +204,17 @@ def render_rays(models,
     results = {}
     inference(results, models['coarse'], 'coarse', xyz_coarse, segs_coarse, z_vals, test_time, **kwargs)
 
-    if N_importance > 0:  # sample points for fine model
-        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-        z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].clone().detach(),
-                             N_importance, det=(perturb == 0))
-        # detach so that grad doesn't propogate to weights_coarse from here
-
-        z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
-        # combine coarse and fine samples
-
-        xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
-        segs_fine = repeat(segs, 'n1 1 c -> n1 n2 c', n2=z_vals.shape[1])
-        inference(results, models['fine'], 'fine', xyz_fine, segs_fine, z_vals, test_time, **kwargs)
+    # if N_importance > 0:  # sample points for fine model
+    #     z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
+    #     z_vals_ = sample_pdf(z_vals_mid, results['weights_coarse'][:, 1:-1].clone().detach(),
+    #                          N_importance, det=(perturb == 0))
+    #     # detach so that grad doesn't propogate to weights_coarse from here
+    #
+    #     z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
+    #     # combine coarse and fine samples
+    #
+    #     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
+    #     segs_fine = repeat(segs, 'n1 1 c -> n1 n2 c', n2=z_vals.shape[1])
+    #     inference(results, models['fine'], 'fine', xyz_fine, segs_fine, z_vals, test_time, **kwargs)
 
     return results

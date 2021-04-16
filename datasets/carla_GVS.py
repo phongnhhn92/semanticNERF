@@ -32,6 +32,8 @@ class CarlaGVSDataset(Dataset):
         self.file_list = self.get_file_list(self.split)
         self.train_camera_suffix = [f'_{str(x).zfill(2)}' for x in range(5)]
 
+
+
     def get_file_list(self,split):
         if split == 'train':
             ''' For training we load a single view from a random camera group, town, weather condition and time step.
@@ -118,20 +120,16 @@ class CarlaGVSDataset(Dataset):
         directions = get_ray_directions(self.height, self.width, focal)
         rays_o, rays_d = get_rays(directions, target_pose)
         # Use NDC for now
-        near, far = 0, 1
-        rays_o, rays_d = get_ndc_rays(self.height, self.width,
-                                      focal, 1.0, rays_o, rays_d)
+        # near, far = 0, 1
+        # rays_o, rays_d = get_ndc_rays(self.height, self.width,
+        #                               focal, 1.0, rays_o, rays_d)
         # Teddy: If we dont use NDC then I need to know the near and far depth plane.
         # Can we find it based on the GT target_disp ?
-        cam_rays = torch.cat([rays_o, rays_d,
-                          near * torch.ones_like(rays_o[:, :1]),
-                          far * torch.ones_like(rays_o[:, :1])],1)
+        cam_rays = torch.cat([rays_o, rays_d],1)
         rays_rgb = input_img.view(3,-1).permute(1,0)
-        pix_inds = torch.randint(0, rays_rgb.shape[0], (self.numberOfRays,))
 
-        # Randomly sample rays
-        data_dict['target_rays'] = cam_rays[pix_inds]
-        data_dict['target_rgb_gt'] = rays_rgb[pix_inds]
+        data_dict['target_rays'] = cam_rays
+        data_dict['target_rgb_gt'] = rays_rgb
 
         data_dict = {k: v.float()
                      for k, v in data_dict.items() if not (k is None)}
@@ -186,8 +184,7 @@ class CarlaGVSDataset(Dataset):
 
     def _read_disp(self, depth_path, k_matrix):
         depth_img = self._read_depth(depth_path).squeeze()
-        disp_img = self.stereo_baseline * \
-            (k_matrix[0, 0]).view(1, 1) / (depth_img.clamp(min=1e-06)).squeeze()
+        disp_img = self.stereo_baseline * (k_matrix[0, 0]).view(1, 1) / (depth_img.clamp(min=1e-06)).squeeze()
         h, w = disp_img.shape[:2]
         disp_img = disp_img.view(1, 1, h, w)
         disp_img = F.interpolate(disp_img, size=(self.height, self.width),

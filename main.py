@@ -16,6 +16,7 @@ from metrics import *
 # models
 from models.nerf import *
 from models.rendering import *
+from models.sun_model import SUNModel
 from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
@@ -38,14 +39,12 @@ class NeRFSystem(LightningModule):
         self.embeddings = {'xyz': self.embedding_xyz,
                            'dir': self.embedding_dir}
 
-        self.nerf_coarse = NeRF()
-        self.models = {'coarse': self.nerf_coarse}
-        load_ckpt(self.nerf_coarse, hparams.weight_path, 'nerf_coarse')
-
-        if hparams.N_importance > 0:
-            self.nerf_fine = NeRF()
-            self.models['fine'] = self.nerf_fine
-            load_ckpt(self.nerf_fine, hparams.weight_path, 'nerf_fine')
+        # NERF model
+        self.models = []
+        self.nerf_model = NeRF()
+        # SUN model
+        self.SUN = SUNModel(self.hparams)
+        self.models = [self.nerf_model,self.SUN]
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -53,6 +52,66 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data):
+        #TODO: SUN model, NERF training
+        loss_dict, semantics_nv, disp_nv = self.SUN(data, mode='training')
+        depth_nv = self.hparams.stereo_baseline * (data['k_matrix'][0][0, 0]).view(1, 1) / disp_nv
+
+        # Get rays data
+        SB,_,H,W = data['input_seg'].shape
+        all_rgb_gt = []
+        all_rays = []
+        all_semantics = []
+        all_depths = []
+        semantics_nv = semantics_nv.view(SB, _, -1).permute(0,2,1)
+        depth_nv = depth_nv.view(SB, 1, -1).permute(0,2,1)
+
+        for target_rays,target_rays_gt,semantics_nv_b,depth_nv_b \
+                in zip(data['target_rays'],data['target_rgb_gt'],semantics_nv,depth_nv):
+
+            #Conver rgb values from 0 to 1
+            target_rays_gt = target_rays_gt * 0.5 + 0.5
+
+            #Randomly sample a few rays in the target view.
+            pix_inds = torch.randint(0, target_rays.shape[0], (self.hparams.num_rays,))
+
+            rays = target_rays[pix_inds]
+            rays_gt = target_rays_gt[pix_inds]
+            rays_semantics = semantics_nv_b[pix_inds]
+            rays_depth = depth_nv_b[pix_inds]
+            all_rgb_gt.append(rays_gt)
+            all_rays.append(rays)
+            all_semantics.append(rays_semantics)
+            all_depths.append(rays_depth)
+
+        all_rgb_gt = torch.stack(all_rgb_gt).view(-1,3)  # (SB * num_rays, 3)
+        all_rays = torch.stack(all_rays).view(-1,6)  # (SB * num_rays, 6)
+        all_semantics = torch.stack(all_semantics).view(-1,_)
+        all_depths = torch.stack(all_depths).view(-1, 1)
+
+        B = all_rays.shape[0]
+        results = defaultdict(list)
+        for i in range(0, B, self.hparams.chunk):
+            rendered_ray_chunks = \
+                render_rays(self.models,
+                            self.embeddings,
+                            all_rays[i:i + self.hparams.chunk],
+                            all_semantics[i:i + self.hparams.chunk],
+                            all_depths[i:i + self.hparams.chunk],
+                            self.hparams.near_plane,
+                            self.hparams.far_plane,
+                            self.hparams.N_samples,
+                            self.hparams.use_disp,
+                            self.hparams.perturb,
+                            self.hparams.noise_std,
+                            self.hparams.N_importance,
+                            self.hparams.chunk,  # chunk size is effective in val mode
+                            )
+
+            for k, v in rendered_ray_chunks.items():
+                results[k] += [v]
+
+        for k, v in results.items():
+            results[k] = torch.cat(v, 0)
 
         return None
 

@@ -25,10 +25,7 @@ class MulLayerConvNetwork(torch.nn.Module):
         self.num_classes = opts.num_classes
         self.num_planes = num_planes
         self.out_seg_chans = self.opts.embedding_size
-        self.discriptor_net = BaseEncoderDecoder(input_channels)
-        self.base_res_layers = nn.Sequential(
-            *[ResBlock(enc_features, 3) for i in range(2)])
-        # we will re-use the input semantics
+
         total_seg_channels = (self.opts.num_layers - 1) * self.out_seg_chans
         total_alpha_channels = num_planes
         self.total_seg_channels = total_seg_channels
@@ -36,14 +33,17 @@ class MulLayerConvNetwork(torch.nn.Module):
         self.total_beta_channels = num_planes * self.opts.num_layers
         total_output_channels = total_seg_channels + \
             total_alpha_channels + self.total_beta_channels
+
+        self.discriptor_net = BaseEncoderDecoder(input_channels)
         self.blending_alpha_seg_beta_pred = nn.Sequential(ResBlock(enc_features, 3),
                                                           ResBlock(
                                                               enc_features, 3),
-                                                          nn.SyncBatchNorm(
+                                                          nn.BatchNorm2d(
                                                               enc_features),
                                                           ConvBlock(
-                                                              enc_features, total_output_channels // 2, 3, down_sample=False),
-                                                          nn.SyncBatchNorm(
+                                                              enc_features, total_output_channels // 2, 3,
+                                                              down_sample=False),
+                                                          nn.BatchNorm2d(
                                                               total_output_channels // 2),
                                                           ConvBlock(total_output_channels // 2,
                                                                     total_output_channels, 3,
@@ -53,8 +53,7 @@ class MulLayerConvNetwork(torch.nn.Module):
     def forward(self, input_sem):
         b, _, h, w = input_sem.shape
         feats_0 = self.discriptor_net(input_sem)
-        feats_1 = self.base_res_layers(feats_0)
-        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_1)
+        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_0)
         alphas = alpha_and_seg_beta[:, -self.total_alpha_channels:, :, :]
         seg = alpha_and_seg_beta[:, self.total_beta_channels:
                                  self.total_beta_channels + self.total_seg_channels, :, :]
@@ -96,13 +95,14 @@ class SUNModel(torch.nn.Module):
                 input_data, seg_mul_layer, alpha, associations)
             semantics_loss = self.compute_semantics_loss(
                 semantics_nv, target_sem)
-            if 'input_disp' in input_data.keys():
-                disp_iv = self.alpha_to_disp(
-                    alpha, input_data['k_matrix'], self.opts.stereo_baseline, novel_view=False)
-                disp_loss = F.l1_loss(disp_iv, input_data['input_disp'])
+
+            t_vec = input_data['t_vec']
+            disp_nv = self.alpha_to_disp(
+                    alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
+            disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
             sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
                         'semantics_loss': semantics_loss}
-            return sun_loss, semantics_nv.data, disp_iv.data
+            return sun_loss, semantics_nv.data, disp_nv.data
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
