@@ -188,7 +188,6 @@ def render_rays(models,
     z_vals = repeat(z_vals,'1 n1 -> r n1', r = N_rays)
 
     # TODO: sample more z_vals based on depths
-
     if perturb > 0:  # perturb sampling depths (z_vals)
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
         # get intervals between samples
