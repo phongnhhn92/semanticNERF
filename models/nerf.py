@@ -42,6 +42,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27,
+                 in_channels_style=256,
                  seg_classes = 13,
                  seg_layers = 3,
                  skips=[4]):
@@ -73,7 +74,7 @@ class NeRF(nn.Module):
         # xyz encoding layers
         for i in range(D):
             if i == 0:
-                layer = nn.Linear(W + in_channels_xyz, W)
+                layer = nn.Linear(W + in_channels_xyz + in_channels_style, W)
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
             else:
@@ -94,10 +95,8 @@ class NeRF(nn.Module):
         self.rgb = nn.Sequential(
                         nn.Linear(W//2, 3),
                         nn.Sigmoid())
-        self.output_feature = nn.Sequential(
-            nn.Linear(W // 2, self.seg_classes))
 
-    def forward(self, x, seg, sigma_only=False):
+    def forward(self, x, seg, style):
         """
         Encodes input (xyz+dir) to rgb+sigma (not ready to render yet).
         For rendering this ray, please see rendering.py
@@ -114,11 +113,9 @@ class NeRF(nn.Module):
             else:
                 out: (B, 4), rgb and sigma
         """
-        if not sigma_only:
-            input_xyz, input_dir = \
+
+        input_xyz, input_dir = \
                 torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
-        else:
-            input_xyz = x
 
         seg_ = seg
         for i in range(self.seg_layers):
@@ -127,23 +124,16 @@ class NeRF(nn.Module):
         xyz_ = input_xyz
         for i in range(self.D):
             if i == 0:
-                xyz_ = torch.cat([xyz_, seg_],dim=-1)
+                xyz_ = torch.cat([xyz_, seg_, style],dim=-1)
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma_color = self.sigma_color(xyz_)
-
-        if sigma_only:
-            return sigma_color
-
         xyz_encoding_final = self.xyz_encoding_final(xyz_)
-
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
         rgb = self.rgb(dir_encoding)
-        feature = self.output_feature(dir_encoding)
-
-        out = torch.cat([rgb, feature, sigma_color], -1)
+        out = torch.cat([rgb, sigma_color], -1)
 
         return out

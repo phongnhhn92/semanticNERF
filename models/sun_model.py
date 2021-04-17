@@ -102,7 +102,7 @@ class SUNModel(torch.nn.Module):
             disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
             sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
                         'semantics_loss': semantics_loss}
-            return sun_loss, semantics_nv.data, disp_nv.data
+            return sun_loss, semantics_nv.data, disp_nv.data,alpha
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)

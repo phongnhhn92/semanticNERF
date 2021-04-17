@@ -12,6 +12,7 @@
 module load gcc/8.3.0 cuda/10.1.168 cudnn cmake
 
 
-python main.py --dataset_name carla --num_gpus 4 --root_dir /scratch/project_2001055/dataset/carla/000000 \
-               --N_importance 64 --img_wh 800 600 --noise_std 0 --num_epochs 10 --batch_size 4096 --optimizer adam --lr 5e-4 \
-               --lr_scheduler steplr --decay_step 2 4 8 --decay_gamma 0.5 --exp_name exp_carla
+python main.py --dataset_name carlaGVS --root_dir /path \
+               --N_importance 64 --img_wh 256 256 --noise_std 0.1 --num_epochs 16 --batch_size 4 \
+               --num_rays 1024 --optimizer adam --lr 4e-5 --lr_scheduler steplr --decay_step 2 4 8 12 \
+               --decay_gamma 0.5 --exp_name exp_carla_GVS

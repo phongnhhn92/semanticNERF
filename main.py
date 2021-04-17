@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-
+from einops import rearrange, reduce, repeat
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 # pytorch-lightning
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -17,6 +17,8 @@ from metrics import *
 from models.nerf import *
 from models.rendering import *
 from models.sun_model import SUNModel
+from models.conv_network import BaseEncoder
+
 from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
@@ -26,7 +28,7 @@ from datasets.ray_utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = True
+_DEBUG = False
 
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
@@ -40,11 +42,12 @@ class NeRFSystem(LightningModule):
                            'dir': self.embedding_dir}
 
         # NERF model
-        self.models = []
         self.nerf_model = NeRF()
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        self.models = [self.nerf_model,self.SUN]
+        # Style encoder
+        self.encoder = BaseEncoder(in_chans=3,output_feats=self.hparams.style_feat)
+        self.models = {'nerf':self.nerf_model,'sun':self.SUN,'enoder':self.encoder}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -52,21 +55,22 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data):
-        #TODO: SUN model, NERF training
-        loss_dict, semantics_nv, disp_nv = self.SUN(data, mode='training')
-        depth_nv = self.hparams.stereo_baseline * (data['k_matrix'][0][0, 0]).view(1, 1) / disp_nv
-
+        loss_dict, semantics_nv, disp_nv,alpha_nv = self.SUN(data, mode='training')
+        style_code = self.encoder(data['input_img'])
         # Get rays data
         SB,_,H,W = data['input_seg'].shape
         all_rgb_gt = []
         all_rays = []
         all_semantics = []
-        all_depths = []
+        all_alphas = []
+        all_styles = []
         semantics_nv = semantics_nv.view(SB, _, -1).permute(0,2,1)
-        depth_nv = depth_nv.view(SB, 1, -1).permute(0,2,1)
+        alpha_nv = alpha_nv.view(SB, self.hparams.num_planes, -1).permute(0,2,1)
 
-        for target_rays,target_rays_gt,semantics_nv_b,depth_nv_b \
-                in zip(data['target_rays'],data['target_rgb_gt'],semantics_nv,depth_nv):
+        for target_rays,target_rays_gt,semantics_nv_b,alpha_nv_b,style_code_b \
+                in zip(data['target_rays'],data['target_rgb_gt'],semantics_nv,alpha_nv,style_code):
+
+            rays_style_code = repeat(style_code_b.unsqueeze(0),'1 n1 -> r n1', r = self.hparams.num_rays)
 
             #Conver rgb values from 0 to 1
             target_rays_gt = target_rays_gt * 0.5 + 0.5
@@ -77,26 +81,29 @@ class NeRFSystem(LightningModule):
             rays = target_rays[pix_inds]
             rays_gt = target_rays_gt[pix_inds]
             rays_semantics = semantics_nv_b[pix_inds]
-            rays_depth = depth_nv_b[pix_inds]
+            rays_alphas = alpha_nv_b[pix_inds]
             all_rgb_gt.append(rays_gt)
             all_rays.append(rays)
             all_semantics.append(rays_semantics)
-            all_depths.append(rays_depth)
+            all_alphas.append(rays_alphas)
+            all_styles.append(rays_style_code)
 
         all_rgb_gt = torch.stack(all_rgb_gt).view(-1,3)  # (SB * num_rays, 3)
         all_rays = torch.stack(all_rays).view(-1,6)  # (SB * num_rays, 6)
         all_semantics = torch.stack(all_semantics).view(-1,_)
-        all_depths = torch.stack(all_depths).view(-1, 1)
+        all_alphas = torch.stack(all_alphas).view(-1, self.hparams.num_planes)
+        all_styles = torch.stack(all_styles).view(-1, self.hparams.style_feat)
 
         B = all_rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.hparams.chunk):
             rendered_ray_chunks = \
-                render_rays(self.models,
+                render_rays(self.nerf_model,
                             self.embeddings,
                             all_rays[i:i + self.hparams.chunk],
                             all_semantics[i:i + self.hparams.chunk],
-                            all_depths[i:i + self.hparams.chunk],
+                            all_alphas[i:i + self.hparams.chunk],
+                            all_styles[i:i + self.hparams.chunk],
                             self.hparams.near_plane,
                             self.hparams.far_plane,
                             self.hparams.num_planes,
@@ -112,7 +119,14 @@ class NeRFSystem(LightningModule):
         for k, v in results.items():
             results[k] = torch.cat(v, 0)
 
-        return None
+        loss_dict['rgb_loss'] = self.loss(results, all_rgb_gt)
+        results['semantic_nv'] = semantics_nv
+        results['disp_nv'] = disp_nv
+        results['loss_dict'] = loss_dict
+
+        psnr_ = psnr(results[f'rgb'], all_rgb_gt)
+        results['psnr'] = psnr_
+        return results
 
     def setup(self, stage):
         dataset = dataset_dict[self.hparams.dataset_name]
@@ -139,17 +153,13 @@ class NeRFSystem(LightningModule):
 
     def training_step(self, batch, batch_nb):
         results = self(batch)
-        # loss = self.loss(results, rgbs, segs.long().squeeze(-1))
-        #
-        # with torch.no_grad():
-        #     typ = 'fine' if 'rgb_fine' in results else 'coarse'
-        #     psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
-        #
-        # self.log('lr', get_learning_rate(self.optimizer))
-        # self.log('train/loss', loss)
-        # self.log('train/psnr', psnr_, prog_bar=True)
+        loss = sum([v for k,v in results['loss_dict'].items()])
 
-        return None
+        self.log('lr', get_learning_rate(self.optimizer))
+        self.log('train/loss', loss)
+        self.log('train/psnr', results['psnr'], prog_bar=True)
+
+        return loss
 
     # def val_dataloader(self):
     #     return DataLoader(self.val_dataset,
@@ -221,7 +231,7 @@ def main(hparams):
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
                       weights_summary=None,
-                      progress_bar_refresh_rate=1,
+                      progress_bar_refresh_rate=100,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       num_sanity_val_steps=1,

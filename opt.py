@@ -13,25 +13,31 @@ def get_opts():
                         help='resolution (img_w, img_h) of the image')
     parser.add_argument('--num_classes', type=int, default=13)
     parser.add_argument('--num_planes', type=int, default=32)
-    parser.add_argument('--num_rays', type=int, default=128,
+    parser.add_argument('--num_rays', type=int, default=256,
                         help='Number of random rays in each novel views.')
+    parser.add_argument('--N_importance', type=int, default=128,
+                        help='number of additional fine samples')
+
     parser.add_argument('--mpi_encoder_features', type=int, default=96,
                             help='this controls number feature channels at the output of the base encoder-decoder network')
+
     parser.add_argument('--embedding_size', type=int, default=13,
                             help='when # of semantic classes is large SUN and LTD will be fed with lower dimensoinal embedding of semantics')
     parser.add_argument('--num_layers', type=int, default=3,
                         help='number of uplifted semantic layers')
     parser.add_argument('--stereo_baseline', type=float, default=0.54,
                             help='assumed baseline for converting depth to disparity')
+    parser.add_argument('--style_feat', type=int, default=256,
+                        help='output dimension of the style encoder')
+    parser.add_argument('--use_vae', action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
                             help='for carla=0.1, for other set to 0.5')
     parser.add_argument('--near_plane', type=int, default=1.5, help='nearest plane: 1.5 for carla')
     parser.add_argument('--far_plane', type=int, default=20000, help='far plane: 20000 for carla')
+
     parser.add_argument('--spheric_poses', default=False, action="store_true",
                         help='whether images are taken in spheric poses (for llff)')
 
-    parser.add_argument('--N_importance', type=int, default=128,
-                        help='number of additional fine samples')
     parser.add_argument('--use_disp', default=False, action="store_true",
                         help='use disparity depth sampling')
     parser.add_argument('--perturb', type=float, default=1.0,
