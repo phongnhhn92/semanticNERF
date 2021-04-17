@@ -1,18 +1,12 @@
 # semanticNERF
 
-#### Slide: [link](https://docs.google.com/presentation/d/1aMH8CI5kQGRWC6GxAHqcgoqiBcEOAptU9fZdTK2aVBg/edit?usp=sharing)
+#### Slide: [link](https://docs.google.com/presentation/d/1j3yNFRC8Yd_XPg7eKPdrRCBsmp2IfE-_BMG9QVAh7EY/edit?usp=sharing)
 
-#### 23-02-2020:
-Starting point: Semantic of the ray is added as additional input to the network. In the future, this semantic ray can comes from reference view so that we can apply homography transformation to project this information to the target view.
-Furthermore, we can add another RGB image and a style encoder to learn the style of the output images.
+#### 18-04-2021:
+Starting point: Finish training code with simple style encoder (no VAE). Based on the predicted alphas of SUN model to 
+sample more dense points. The MLP model is conditioned on (1) semantic class of that ray, (2) style encoded feature F of the entire style image.  
 
-![](/images/ideas_23-02-2020.jpg "Ideas")
-
-RGB output:
-![](/images/manipulation_RGB.gif "Ideas")
-
-Depth output:
-![](/images/manipulation_depth.gif "Ideas")
+![](/images/GVS_NERF.jpg "Ideas")
 
 #### Dataset:
 LLFF,Blender dataset: [link](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
@@ -51,6 +45,3 @@ python main.py --dataset_name carla
 --optimizer adam --lr 5e-4 --lr_scheduler steplr --decay_step 2 4  
 --decay_gamma 0.5 --exp_name exp_carla
 ```
-
-#### Ideas:
-Slides:[link](https://docs.google.com/presentation/d/1s9k5OCkHxywoAk8Ab2kk8J5DApcRCgLtf2DzNNI3nO4/edit#slide=id.gb4f7efcc71_0_64)
