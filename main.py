@@ -160,7 +160,7 @@ class NeRFSystem(LightningModule):
         self.log('train/psnr', results['psnr'], prog_bar=True)
 
         return loss
-
+    # TODO: val code
     # def val_dataloader(self):
     #     return DataLoader(self.val_dataset,
     #                       shuffle=False,
