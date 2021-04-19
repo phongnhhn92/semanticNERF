@@ -227,7 +227,7 @@ def main(hparams):
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
                       weights_summary=None,
-                      progress_bar_refresh_rate=1,
+                      progress_bar_refresh_rate= 1000 if hparams.num_gpus > 1 else 1,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       sync_batchnorm= True if hparams.num_gpus > 1 else False,
