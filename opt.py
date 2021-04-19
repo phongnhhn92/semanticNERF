@@ -17,7 +17,6 @@ def get_opts():
                         help='Number of random rays in each novel views.')
     parser.add_argument('--N_importance', type=int, default=128,
                         help='number of additional fine samples')
-
     parser.add_argument('--mpi_encoder_features', type=int, default=96,
                             help='this controls number feature channels at the output of the base encoder-decoder network')
 

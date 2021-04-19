@@ -11,8 +11,7 @@
 #SBATCH -e train_e_carla.txt
 module load gcc/8.3.0 cuda/10.1.168 cudnn cmake
 
-
 python main.py --dataset_name carlaGVS --root_dir /path \
-               --N_importance 64 --img_wh 256 256 --noise_std 0.1 --num_epochs 16 --batch_size 4 \
-               --num_rays 1024 --optimizer adam --lr 4e-5 --lr_scheduler steplr --decay_step 2 4 8 12 \
+               --N_importance 96 --img_wh 256 256 --noise_std 0.1 --num_epochs 30 --batch_size 8 \
+               --num_rays 1024 --optimizer adam --lr 4e-5 --lr_scheduler steplr --decay_step 10 15 20 \
                --decay_gamma 0.5 --exp_name exp_carla_GVS

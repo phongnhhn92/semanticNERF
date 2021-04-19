@@ -1,18 +1,24 @@
 import os
 from collections import defaultdict
-from einops import rearrange, reduce, repeat
-from pytorch_lightning import LightningModule, Trainer, seed_everything
+from einops import repeat
+
 # pytorch-lightning
+from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TestTubeLogger
 from torch.utils.data import DataLoader
 
+# datasets
 from datasets import dataset_dict
 from datasets.carla_utils.utils import SaveSemantics
+from datasets.ray_utils import getRandomRays
+
 # losses
 from losses import loss_dict
+
 # metrics
 from metrics import *
+
 # models
 from models.nerf import *
 from models.rendering import *
@@ -22,9 +28,6 @@ from models.conv_network import BaseEncoder
 from opt import get_opts
 # optimizer, scheduler, visualization
 from utils import *
-
-#Sample rays
-from datasets.ray_utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
@@ -54,56 +57,38 @@ class NeRFSystem(LightningModule):
         items.pop("v_num", None)
         return items
 
-    def forward(self, data):
-        loss_dict, semantics_nv, disp_nv,alpha_nv = self.SUN(data, mode='training')
+    def forward(self, data, training = True):
+        loss_dict, semantics_nv, disp_nv,alpha_nv = self.SUN(data)
         style_code = self.encoder(data['input_img'])
         # Get rays data
         SB,_,H,W = data['input_seg'].shape
-        all_rgb_gt = []
-        all_rays = []
-        all_semantics = []
-        all_alphas = []
-        all_styles = []
         semantics_nv = semantics_nv.view(SB, _, -1).permute(0,2,1)
         alpha_nv = alpha_nv.view(SB, self.hparams.num_planes, -1).permute(0,2,1)
 
-        for target_rays,target_rays_gt,semantics_nv_b,alpha_nv_b,style_code_b \
-                in zip(data['target_rays'],data['target_rgb_gt'],semantics_nv,alpha_nv,style_code):
-
-            rays_style_code = repeat(style_code_b.unsqueeze(0),'1 n1 -> r n1', r = self.hparams.num_rays)
-
-            #Conver rgb values from 0 to 1
-            target_rays_gt = target_rays_gt * 0.5 + 0.5
-
-            #Randomly sample a few rays in the target view.
-            pix_inds = torch.randint(0, target_rays.shape[0], (self.hparams.num_rays,))
-
-            rays = target_rays[pix_inds]
-            rays_gt = target_rays_gt[pix_inds]
-            rays_semantics = semantics_nv_b[pix_inds]
-            rays_alphas = alpha_nv_b[pix_inds]
-            all_rgb_gt.append(rays_gt)
-            all_rays.append(rays)
-            all_semantics.append(rays_semantics)
-            all_alphas.append(rays_alphas)
-            all_styles.append(rays_style_code)
-
-        all_rgb_gt = torch.stack(all_rgb_gt).view(-1,3)  # (SB * num_rays, 3)
-        all_rays = torch.stack(all_rays).view(-1,6)  # (SB * num_rays, 6)
-        all_semantics = torch.stack(all_semantics).view(-1,_)
-        all_alphas = torch.stack(all_alphas).view(-1, self.hparams.num_planes)
-        all_styles = torch.stack(all_styles).view(-1, self.hparams.style_feat)
+        if training:
+            all_rgb_gt, all_rays, all_semantics, all_alphas, all_styles \
+                = getRandomRays(self.hparams,data,semantics_nv,alpha_nv,style_code)
+            chunk = self.hparams.chunk
+        else:
+            assert SB == 1, 'Wrong eval batch size !'
+            all_rgb_gt = data['target_rgb_gt'].squeeze(0)
+            all_rays = data['target_rays'].squeeze(0)
+            all_semantics = semantics_nv.squeeze(0)
+            all_alphas = alpha_nv.squeeze(0)
+            all_styles = repeat(style_code, '1 n1 -> r n1', r=all_rgb_gt.shape[0])
+            chunk = self.hparams.chunk // 8
 
         B = all_rays.shape[0]
         results = defaultdict(list)
-        for i in range(0, B, self.hparams.chunk):
+
+        for i in range(0, B, chunk):
             rendered_ray_chunks = \
                 render_rays(self.nerf_model,
                             self.embeddings,
-                            all_rays[i:i + self.hparams.chunk],
-                            all_semantics[i:i + self.hparams.chunk],
-                            all_alphas[i:i + self.hparams.chunk],
-                            all_styles[i:i + self.hparams.chunk],
+                            all_rays[i:i + chunk],
+                            all_semantics[i:i + chunk],
+                            all_alphas[i:i + chunk],
+                            all_styles[i:i + chunk],
                             self.hparams.near_plane,
                             self.hparams.far_plane,
                             self.hparams.num_planes,
@@ -156,60 +141,71 @@ class NeRFSystem(LightningModule):
         loss = sum([v for k,v in results['loss_dict'].items()])
 
         self.log('lr', get_learning_rate(self.optimizer))
+        self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
+        self.log('train/disp_loss', results['loss_dict']['disp_loss'])
+        self.log('train/semantic_loss', results['loss_dict']['semantics_loss'])
+
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
 
         return loss
-    # TODO: val code
-    # def val_dataloader(self):
-    #     return DataLoader(self.val_dataset,
-    #                       shuffle=False,
-    #                       num_workers=4,
-    #                       batch_size=1,  # validate one image (H*W rays) at a time
-    #                       pin_memory=True)
-    #
-    # def validation_step(self, batch, batch_nb):
-    #     rays, rgbs, segs_onehot,segs = batch['rays'], batch['rgbs'], batch['segs_onehot'], batch['segs']
-    #     rays = rays.squeeze()  # (H*W, 3)
-    #     rgbs = rgbs.squeeze()  # (H*W, 3)
-    #     segs = segs.squeeze()  # (H*W)
-    #     segs_onehot = segs_onehot.squeeze()  # (H*W, 13)
-    #     results = self(rays, segs_onehot)
-    #     log = {'val_loss': self.loss(results, rgbs, segs.long())}
-    #     typ = 'fine' if 'rgb_fine' in results else 'coarse'
-    #
-    #     if batch_nb == 0:
-    #         W, H = self.hparams.img_wh
-    #         img = results[f'rgb_{typ}'].view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
-    #         img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
-    #         depth = visualize_depth(results[f'depth_{typ}'].view(H, W))  # (3, H, W)
-    #         stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
-    #         self.logger.experiment.add_images('val/GT_pred_depth',
-    #                                           stack, self.global_step)
-    #
-    #         # Visualize semantic results
-    #         save_semantic = SaveSemantics('carla')
-    #         seg_pred = results[f'feature_{typ}'].cpu()
-    #         seg_pred = torch.softmax(seg_pred, dim=1)
-    #         seg_pred = torch.argmax(seg_pred, dim=1).view(H, W).unsqueeze(0)  # (1,H,W)
-    #         seg_pred = torch.from_numpy(save_semantic.to_color(seg_pred)).permute(2, 0, 1)  # (H,W,3)
-    #
-    #         segs = segs.view(H, W).unsqueeze(0).cpu()
-    #         segs = torch.from_numpy(save_semantic.to_color(segs)).permute(2, 0, 1)  # (H,W,3)
-    #         stack_segs = torch.stack([segs, seg_pred])
-    #         self.logger.experiment.add_images('val/GT_pred_semantics', stack_segs / 255.0, self.global_step)
-    #
-    #     psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
-    #     log['val_psnr'] = psnr_
-    #
-    #     return log
-    #
-    # def validation_epoch_end(self, outputs):
-    #     mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-    #     mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
-    #
-    #     self.log('val/loss', mean_loss)
-    #     self.log('val/psnr', mean_psnr, prog_bar=True)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset,
+                          shuffle=False,
+                          num_workers= 0 if _DEBUG else 4,
+                          batch_size=1,  # validate one image (H*W rays) at a time
+                          pin_memory=True)
+
+    def validation_step(self, batch, batch_nb):
+        results = self(batch,training=False)
+        loss = sum([v for k, v in results['loss_dict'].items()])
+        log = {'val_loss': loss}
+
+        save_semantic = SaveSemantics('carla')
+        if batch_nb == 0:
+            W, H = self.hparams.img_wh
+            input_img = batch['input_img'][0].cpu()
+            input_img = input_img * 0.5 + 0.5
+
+            input_seg = torch.argmax(batch['input_seg'],dim=1).cpu()
+            input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
+            input_seg = input_seg / 255.0
+
+            target_img = batch['target_img'][0].cpu()
+            target_img = target_img * 0.5 + 0.5
+
+            target_seg = torch.argmax(batch['target_seg'],dim=1).cpu()
+            target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
+            target_seg = target_seg / 255.0
+
+            stack = torch.stack([input_img,input_seg,target_img,target_seg])
+            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
+                                              stack, self.global_step)
+
+            pred_seg = results['semantic_nv'].permute(0,2,1).view(1,self.hparams.num_classes,H,W).cpu()
+            pred_seg = torch.argmax(pred_seg,dim=1)
+            pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
+            pred_seg = pred_seg / 255.0
+
+            pred_rgb = results['rgb'].permute(1,0).view(3,H,W).cpu()
+            pred_disp = visualize_depth(results['disp_nv'].squeeze().cpu())
+            pred_depth = visualize_depth(results['depth'].view(H, W).cpu())
+
+            stack_pred = torch.stack([pred_rgb,pred_seg,pred_disp,pred_depth])
+            self.logger.experiment.add_images('val/predictions',
+                                              stack_pred, self.global_step)
+
+        log['val_psnr'] = results['psnr']
+
+        return log
+
+    def validation_epoch_end(self, outputs):
+        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        mean_psnr = torch.stack([x['val_psnr'] for x in outputs]).mean()
+
+        self.log('val/loss', mean_loss)
+        self.log('val/psnr', mean_psnr, prog_bar=True)
 
 
 def main(hparams):
@@ -231,9 +227,10 @@ def main(hparams):
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
                       weights_summary=None,
-                      progress_bar_refresh_rate=100,
+                      progress_bar_refresh_rate=1,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
+                      sync_batchnorm= True if hparams.num_gpus > 1 else False,
                       num_sanity_val_steps=1,
                       benchmark=True,
                       profiler="simple" if hparams.num_gpus == 1 else None,

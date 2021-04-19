@@ -1,17 +1,17 @@
 import torch
-
 import torch.nn as nn
 import torch.nn.functional as F
-from .conv_network import ResBlock
-from .conv_network import ConvBlock
-from .conv_network import BaseEncoderDecoder
 
-from .semantic_embedding import SemanticEmbedding
-from .mpi import ComputeHomography
-from .mpi import AlphaComposition
-from .mpi import ApplyHomography
+from .conv_network import BaseEncoderDecoder
+from .conv_network import ConvBlock
+from .conv_network import ResBlock
 from .mpi import Alpha2Disp
+from .mpi import AlphaComposition
 from .mpi import ApplyAssociation
+from .mpi import ApplyHomography
+from .mpi import ComputeHomography
+from .semantic_embedding import SemanticEmbedding
+
 
 class MulLayerConvNetwork(torch.nn.Module):
 
@@ -32,7 +32,7 @@ class MulLayerConvNetwork(torch.nn.Module):
         self.total_alpha_channels = total_alpha_channels
         self.total_beta_channels = num_planes * self.opts.num_layers
         total_output_channels = total_seg_channels + \
-            total_alpha_channels + self.total_beta_channels
+                                total_alpha_channels + self.total_beta_channels
 
         self.discriptor_net = BaseEncoderDecoder(input_channels)
         self.blending_alpha_seg_beta_pred = nn.Sequential(ResBlock(enc_features, 3),
@@ -56,7 +56,7 @@ class MulLayerConvNetwork(torch.nn.Module):
         alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_0)
         alphas = alpha_and_seg_beta[:, -self.total_alpha_channels:, :, :]
         seg = alpha_and_seg_beta[:, self.total_beta_channels:
-                                 self.total_beta_channels + self.total_seg_channels, :, :]
+                                    self.total_beta_channels + self.total_seg_channels, :, :]
         beta = alpha_and_seg_beta[:, :self.total_beta_channels, :, :]
         alpha = alphas.view(b, self.num_planes, 1, h, w)
         seg = seg.view(b, (self.opts.num_layers - 1), self.out_seg_chans, h, w)
@@ -82,27 +82,23 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-    def forward(self, input_data, mode='inference'):
-        if mode == 'inference':
-            with torch.no_grad():
-                scene_representation = self._infere_scene_repr(input_data)
-            return scene_representation
-        elif mode == 'training':
-            target_sem = input_data['target_seg']
-            seg_mul_layer, alpha, associations = self._infere_scene_repr(
-                input_data)
-            semantics_nv = self._render_nv_semantics(
-                input_data, seg_mul_layer, alpha, associations)
-            semantics_loss = self.compute_semantics_loss(
-                semantics_nv, target_sem)
+    def forward(self, input_data):
 
-            t_vec = input_data['t_vec']
-            disp_nv = self.alpha_to_disp(
-                    alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
-            disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
-            sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
-                        'semantics_loss': semantics_loss}
-            return sun_loss, semantics_nv.data, disp_nv.data,alpha
+        target_sem = input_data['target_seg']
+        seg_mul_layer, alpha, associations = self._infere_scene_repr(
+            input_data)
+        semantics_nv = self._render_nv_semantics(
+            input_data, seg_mul_layer, alpha, associations)
+        semantics_loss = self.compute_semantics_loss(
+            semantics_nv, target_sem)
+
+        t_vec = input_data['t_vec']
+        disp_nv = self.alpha_to_disp(
+            alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
+        disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
+        sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
+                    'semantics_loss': semantics_loss}
+        return sun_loss, semantics_nv.data, disp_nv.data, alpha
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
@@ -139,4 +135,3 @@ class SUNModel(torch.nn.Module):
     def compute_semantics_loss(self, pred_semantics, target_semantics):
         _, target_seg = target_semantics.max(dim=1)
         return F.cross_entropy(pred_semantics, target_seg, ignore_index=self.opts.num_classes)
-

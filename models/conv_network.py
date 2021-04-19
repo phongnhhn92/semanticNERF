@@ -62,7 +62,8 @@ class BaseEncoder(torch.nn.Module):
         self.conv_block_6 = ConvBlock(int(16 * feat_size), int(16 * feat_size), kernel_size)  # H/64
         self.fc_mu = nn.Sequential(nn.Linear(512 * 4 * 4, 512),
                                    nn.Linear(512, output_feats))
-        self.fc_var = nn.Sequential(nn.Linear(512 * 4 * 4, 512),
+        if self.use_vae:
+            self.fc_var = nn.Sequential(nn.Linear(512 * 4 * 4, 512),
                                    nn.Linear(512, output_feats))
 
     def reparameterize(self, mu, logvar):
