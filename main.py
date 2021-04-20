@@ -58,7 +58,7 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data, training = True):
-        loss_dict, semantics_nv, disp_nv,alpha_nv = self.SUN(data)
+        loss_dict, semantics_nv, disp_nv,alpha_nv = self.SUN(data, d_loss = self.hparams.use_disparity_loss)
         style_code = self.encoder(data['input_img'])
         # Get rays data
         SB,_,H,W = data['input_seg'].shape
@@ -142,7 +142,8 @@ class NeRFSystem(LightningModule):
 
         self.log('lr', get_learning_rate(self.optimizer))
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
-        self.log('train/disp_loss', results['loss_dict']['disp_loss'])
+        if self.hparams.use_disparity_loss:
+            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/semantic_loss', results['loss_dict']['semantics_loss'])
 
         self.log('train/loss', loss)
@@ -216,9 +217,9 @@ def main(hparams):
                         mode='max',
                         save_top_k=5)
 
-    logger = TestTubeLogger(save_dir="logs",
+    logger = TestTubeLogger(save_dir=hparams.log_dir,
                             name=hparams.exp_name,
-                            debug=False,
+                            debug=_DEBUG,
                             create_git_tag=False,
                             log_graph=False)
 

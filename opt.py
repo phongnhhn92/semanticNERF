@@ -6,6 +6,9 @@ def get_opts():
     parser.add_argument('--root_dir', type=str,
                         default='/home/ubuntu/data/nerf_example_data/nerf_synthetic/lego',
                         help='root directory of dataset')
+    parser.add_argument('--log_dir', type=str,
+                        default='./logs',
+                        help='log directory of trained model')
     parser.add_argument('--dataset_name', type=str, default='blender',
                         choices=['blender', 'llff','carla','carlaGVS'],
                         help='which dataset to train/val')
@@ -28,7 +31,8 @@ def get_opts():
                             help='assumed baseline for converting depth to disparity')
     parser.add_argument('--style_feat', type=int, default=256,
                         help='output dimension of the style encoder')
-    parser.add_argument('--use_vae', action='store_true')
+    parser.add_argument('--use_vae', default=False, action='store_true')
+    parser.add_argument('--use_disparity_loss', default=False, action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
                             help='for carla=0.1, for other set to 0.5')
     parser.add_argument('--near_plane', type=int, default=1.5, help='nearest plane: 1.5 for carla')
@@ -37,8 +41,6 @@ def get_opts():
     parser.add_argument('--spheric_poses', default=False, action="store_true",
                         help='whether images are taken in spheric poses (for llff)')
 
-    parser.add_argument('--use_disp', default=False, action="store_true",
-                        help='use disparity depth sampling')
     parser.add_argument('--perturb', type=float, default=1.0,
                         help='factor to perturb depth sampling points')
     parser.add_argument('--noise_std', type=float, default=1.0,

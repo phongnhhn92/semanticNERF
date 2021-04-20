@@ -82,7 +82,7 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-    def forward(self, input_data):
+    def forward(self, input_data, d_loss = False):
 
         target_sem = input_data['target_seg']
         seg_mul_layer, alpha, associations = self._infere_scene_repr(
@@ -91,13 +91,16 @@ class SUNModel(torch.nn.Module):
             input_data, seg_mul_layer, alpha, associations)
         semantics_loss = self.compute_semantics_loss(
             semantics_nv, target_sem)
+        sun_loss = {'semantics_loss': semantics_loss}
 
         t_vec = input_data['t_vec']
         disp_nv = self.alpha_to_disp(
             alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
-        disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
-        sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
-                    'semantics_loss': semantics_loss}
+
+        if d_loss:
+            disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
+            sun_loss['disp_loss'] = self.opts.disparity_weight * disp_loss
+
         return sun_loss, semantics_nv.data, disp_nv.data, alpha
 
     def _infere_scene_repr(self, input_data):
