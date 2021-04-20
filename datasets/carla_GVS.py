@@ -119,14 +119,8 @@ class CarlaGVSDataset(Dataset):
         focal = k_matrix[0, 0]
         directions = get_ray_directions(self.height, self.width, focal)
         rays_o, rays_d = get_rays(directions, target_pose)
-        # Use NDC for now
-        # near, far = 0, 1
-        # rays_o, rays_d = get_ndc_rays(self.height, self.width,
-        #                               focal, 1.0, rays_o, rays_d)
-        # Teddy: If we dont use NDC then I need to know the near and far depth plane.
-        # Can we find it based on the GT target_disp ?
         cam_rays = torch.cat([rays_o, rays_d],1)
-        rays_rgb = input_img.view(3,-1).permute(1,0)
+        rays_rgb = target_img.view(3,-1).permute(1,0)
 
         data_dict['target_rays'] = cam_rays
         data_dict['target_rgb_gt'] = rays_rgb
