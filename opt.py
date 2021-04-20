@@ -29,6 +29,7 @@ def get_opts():
                         help='number of uplifted semantic layers')
     parser.add_argument('--stereo_baseline', type=float, default=0.54,
                             help='assumed baseline for converting depth to disparity')
+    parser.add_argument('--use_style_encoder', default=False, action='store_true')
     parser.add_argument('--style_feat', type=int, default=256,
                         help='output dimension of the style encoder')
     parser.add_argument('--use_vae', default=False, action='store_true')
