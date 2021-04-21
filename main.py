@@ -30,7 +30,7 @@ seed_everything(100)
 _DEBUG = False
 
 # TODO:
-# 0. Fix disp visualization in val step
+# 0. Fix disp visualization in val step (done)
 # 1. Replace simple CNN encoder with LTN
 # 2. Sample rays from multiple target views instead of using a single target
 # 3. Use a pre-trained resenet encoder for LTN
@@ -191,7 +191,7 @@ class NeRFSystem(LightningModule):
             pred_seg = pred_seg / 255.0
 
             pred_rgb = results['rgb'].permute(1, 0).view(3, H, W).cpu()
-            pred_disp = visualize_depth(results['disp_nv'].squeeze().cpu())
+            pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
             pred_depth = visualize_depth(results['depth'].view(H, W).cpu())
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
@@ -234,7 +234,6 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       sync_batchnorm=True if hparams.num_gpus > 1 else False,
-                      fast_dev_run=10, # runs 10 train, val, test batches and program ends
                       num_sanity_val_steps=1,
                       benchmark=True,
                       profiler="simple" if hparams.num_gpus == 1 else None,

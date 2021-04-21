@@ -32,8 +32,6 @@ class CarlaGVSDataset(Dataset):
         self.file_list = self.get_file_list(self.split)
         self.train_camera_suffix = [f'_{str(x).zfill(2)}' for x in range(5)]
 
-
-
     def get_file_list(self,split):
         if split == 'train':
             ''' For training we load a single view from a random camera group, town, weather condition and time step.
