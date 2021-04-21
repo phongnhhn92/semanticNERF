@@ -95,4 +95,36 @@ def get_opts():
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
 
+    parser.add_argument('--feats_per_layer', type=int, default=20)
+    parser.add_argument('--num_upsampling_layers',
+                            choices=('normal', 'more', 'most'), default='normal',
+                            help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
+    parser.add_argument('--use_instance_mask', action='store_true',
+                            help='is paased, instance mask will be assuned to be present')
+    ## Generator settings
+    parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
+    parser.add_argument('--init_type', type=str, default='xavier',
+                            help='network initialization [normal|xavier|kaiming|orthogonal]')
+    parser.add_argument('--init_variance', type=float, default=0.02,
+                            help='variance of the initialization distribution')
+    parser.add_argument('--z_dim', type=int, default=256, help="dimension of the latent z vector")
+
+    ######### Arguments for SPADE
+    parser.add_argument('--d_step_per_g', type=int, default=1, help='num of d updates for each g update')
+    parser.add_argument('--crop_size', type=int, default=256,
+                            help='Crop to the width of crop_size (after initially scaling the images to load_size.)')
+    parser.add_argument('--spade_k_size', type=int, default=3)
+    parser.add_argument('--num_D', type=int, default=3)
+    parser.add_argument('--output_nc', type=int, default=3)
+    parser.add_argument('--n_layers_D', type=int, default=4)
+
+    parser.add_argument('--contain_dontcare_label', action='store_true')
+    parser.add_argument('--no_instance', default=True, type=bool)
+    parser.add_argument('--norm_G', type=str, default='spectralspadesyncbatch3x3',
+                            help='instance normalization or batch normalization')
+    parser.add_argument('--norm_D', type=str, default='spectralinstance',
+                            help='instance normalization or batch normalization')
+    parser.add_argument('--norm_E', type=str, default='spectralinstance',
+                            help='instance normalization or batch normalization')
+
     return parser.parse_args()

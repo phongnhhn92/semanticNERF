@@ -9,6 +9,8 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from datasets.ray_utils import *
 
+
+
 class CarlaGVSDataset(Dataset):
     def __init__(self, opts,split,numberOfRays = 128):
         super(CarlaGVSDataset,self).__init__()

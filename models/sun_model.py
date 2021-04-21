@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from copy import deepcopy
 from .conv_network import BaseEncoderDecoder
 from .conv_network import ConvBlock
 from .conv_network import ResBlock
@@ -11,7 +11,7 @@ from .mpi import ApplyAssociation
 from .mpi import ApplyHomography
 from .mpi import ComputeHomography
 from .semantic_embedding import SemanticEmbedding
-
+from models.spade import MLPEncoder,SPADEGenerator
 
 class MulLayerConvNetwork(torch.nn.Module):
 
@@ -82,13 +82,29 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-    def forward(self, input_data, d_loss = False):
+        self.mlp_encoder = MLPEncoder(opts)
+        spade_ltn_opts = deepcopy(opts)
+        spade_ltn_opts.__dict__[
+            'num_out_channels'] = opts.feats_per_layer
+        spade_ltn_opts.__dict__[
+            'semantic_nc'] = opts.num_layers * opts.embedding_size
+        spade_ltn_opts.__dict__[
+            'embedding_size'] = opts.num_layers * opts.embedding_size
+        spade_ltn_opts.__dict__[
+            'label_nc'] = opts.num_layers * opts.embedding_size
+        self.spade_ltn = SPADEGenerator(spade_ltn_opts, no_tanh=True)
+
+    def forward(self, input_data, style_code, d_loss = False):
+        style_ = self.mlp_encoder(style_code)
 
         target_sem = input_data['target_seg']
         seg_mul_layer, alpha, associations = self._infere_scene_repr(
             input_data)
+
         semantics_nv = self._render_nv_semantics(
             input_data, seg_mul_layer, alpha, associations)
+        appearance_nv_feats = self.spade_ltn(semantics_nv, z=style_)
+
         semantics_loss = self.compute_semantics_loss(
             semantics_nv, target_sem)
         sun_loss = {'semantics_loss': semantics_loss}
@@ -101,7 +117,7 @@ class SUNModel(torch.nn.Module):
             disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
             sun_loss['disp_loss'] = self.opts.disparity_weight * disp_loss
 
-        return sun_loss, semantics_nv.data, disp_nv.data, alpha
+        return sun_loss, semantics_nv.data, disp_nv.data, alpha.data, appearance_nv_feats.data
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
@@ -129,6 +145,7 @@ class SUNModel(torch.nn.Module):
             h_matrix=h_mats, src_img=mpi_sem, grid=None)
         mpi_alpha_nv, _ = self.apply_homography(
             h_matrix=h_mats, src_img=mpi_alpha, grid=grid)
+
         sem_nv = self.alpha_composition(
             src_imgs=mpi_sem_nv, alpha_imgs=mpi_alpha_nv)
         if not (self.opts.num_classes == self.opts.embedding_size):

@@ -48,49 +48,6 @@ class DeconvBlock(nn.Module):
         x = F.relu(self.conv_0(x))
         return x
 
-class BaseEncoder(torch.nn.Module):
-    """ This class serves as the base encoder decoder network usef for estimating"""
-
-    def __init__(self, in_chans, feat_size=32, output_feats=256, kernel_size=3, use_vae=False):
-        super(BaseEncoder, self).__init__()
-        self.use_vae = use_vae
-        self.conv_block_1 = ConvBlock(in_chans, feat_size, 5)  # H/2
-        self.conv_block_2 = ConvBlock(feat_size, int(2 * feat_size), 5)  # H/4
-        self.conv_block_3 = ConvBlock(int(2 * feat_size), int(4 * feat_size), kernel_size)  # H/8
-        self.conv_block_4 = ConvBlock(int(4 * feat_size), int(8 * feat_size), kernel_size)  # H/16
-        self.conv_block_5 = ConvBlock(int(8 * feat_size), int(16 * feat_size), kernel_size)  # H/32
-        self.conv_block_6 = ConvBlock(int(16 * feat_size), int(16 * feat_size), kernel_size)  # H/64
-        self.fc_mu = nn.Sequential(nn.Linear(512 * 4 * 4, 512),
-                                   nn.Linear(512, output_feats))
-        if self.use_vae:
-            self.fc_var = nn.Sequential(nn.Linear(512 * 4 * 4, 512),
-                                   nn.Linear(512, output_feats))
-
-    def reparameterize(self, mu, logvar):
-        if not self.training:
-            return mu
-        else:
-            std = torch.exp(0.5 * logvar)
-            eps = torch.randn_like(std)
-            return eps.mul(std) + mu
-
-    def forward(self, input):
-        x = self.conv_block_1(input)
-        x = self.conv_block_2(x)
-        x = self.conv_block_3(x)
-        x = self.conv_block_4(x)
-        x = self.conv_block_5(x)
-        x = self.conv_block_6(x)
-        x = x.view(x.size(0), -1)
-        mu = self.fc_mu(x)
-
-        if self.use_vae:
-            logvar = self.fc_var(x)
-            z = self.reparameterize(mu, logvar)
-            return z, mu, logvar
-        else:
-            return mu
-
 class BaseEncoderDecoder(torch.nn.Module):
     """ This class serves as the base encoder decoder network usef for estimating"""
 

@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 
-from einops import repeat
+import torchvision
 # pytorch-lightning
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -11,12 +11,11 @@ from torch.utils.data import DataLoader
 # datasets
 from datasets import dataset_dict
 from datasets.carla_utils.utils import SaveSemantics
-from datasets.ray_utils import getRandomRays
+from datasets.ray_utils import getRandomRays, one_hot_encoding
 # losses
 from losses import loss_dict
 # metrics
 from metrics import *
-from models.conv_network import BaseEncoder
 # models
 from models.nerf import *
 from models.rendering import *
@@ -27,7 +26,8 @@ from utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = False
+_DEBUG = True
+
 
 # TODO:
 # 0. Fix disp visualization in val step (done)
@@ -47,12 +47,13 @@ class NeRFSystem(LightningModule):
                            'dir': self.embedding_dir}
 
         # NERF model
-        self.nerf_model = NeRF()
+        self.nerf_model = NeRF(in_channels_style=self.hparams.feats_per_layer)
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        # Style encoder
-        self.encoder = BaseEncoder(in_chans=3, output_feats=self.hparams.style_feat)
-        self.models = {'nerf': self.nerf_model, 'sun': self.SUN, 'enoder': self.encoder}
+        # style_encoder
+        resnet = torchvision.models.resnet18(pretrained=True)
+        self.encoder = nn.Sequential(*list(resnet.children()))[:-2]
+        self.models = {'nerf': self.nerf_model, 'sun': self.SUN}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -60,29 +61,39 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data, training=True):
-        loss_dict, semantics_nv, disp_nv, alpha_nv = self.SUN(data, d_loss=self.hparams.use_disparity_loss)
-        style_code = self.encoder(data['input_img'])
+        results = defaultdict(list)
+        # Get style code from the style image
+        with torch.no_grad():
+            style_code = self.encoder(data['style_img'])
+        # Get the semantic ,disparity, alpha and appearance feature of the novel view
+        loss_dict, semantics_nv, disp_nv, alpha_nv, appearance_nv \
+            = self.SUN(data, style_code, d_loss=self.hparams.use_disparity_loss)
+
+        # Get one-hot encoded semantic maps of the novel view
+        semantics_nv_one = torch.argmax(torch.softmax(semantics_nv, dim=1), dim=1).unsqueeze(1)
+        semantics_nv_one = one_hot_encoding(semantics_nv_one, self.hparams.num_classes)
+
         # Get rays data
-        SB, _, H, W = data['input_seg'].shape
-        semantics_nv = semantics_nv.view(SB, _, -1).permute(0, 2, 1)
+        SB, F, H, W = appearance_nv.shape
+        semantics_nv_one = semantics_nv_one.view(SB, self.hparams.num_classes, -1).permute(0, 2, 1)
         alpha_nv = alpha_nv.view(SB, self.hparams.num_planes, -1).permute(0, 2, 1)
+        appearance_nv = appearance_nv.view(SB, F, -1).permute(0, 2, 1)
 
         if training:
-            all_rgb_gt, all_rays, all_semantics, all_alphas, all_styles \
-                = getRandomRays(self.hparams, data, semantics_nv, alpha_nv, style_code)
+            all_rgb_gt, all_rays, all_semantics, all_alphas, all_appearance \
+                = getRandomRays(self.hparams, data, semantics_nv_one, alpha_nv, appearance_nv, F)
             chunk = self.hparams.chunk
         else:
             assert SB == 1, 'Wrong eval batch size !'
             all_rgb_gt = data['target_rgb_gt'].squeeze(0)
             all_rays = data['target_rays'].squeeze(0)
-            all_semantics = semantics_nv.squeeze(0)
+            all_semantics = semantics_nv_one.squeeze(0)
+            all_appearance = appearance_nv.squeeze(0)
             all_alphas = alpha_nv.squeeze(0)
-            all_styles = repeat(style_code, '1 n1 -> r n1', r=all_rgb_gt.shape[0])
             chunk = self.hparams.chunk // 8
 
         B = all_rays.shape[0]
-        results = defaultdict(list)
-
+        # Conditional NERF MLP network
         for i in range(0, B, chunk):
             rendered_ray_chunks = \
                 render_rays(self.nerf_model,
@@ -90,7 +101,7 @@ class NeRFSystem(LightningModule):
                             all_rays[i:i + chunk],
                             all_semantics[i:i + chunk],
                             all_alphas[i:i + chunk],
-                            all_styles[i:i + chunk],
+                            all_appearance[i:i + chunk],
                             self.hparams.near_plane,
                             self.hparams.far_plane,
                             self.hparams.num_planes,
@@ -110,7 +121,6 @@ class NeRFSystem(LightningModule):
         results['semantic_nv'] = semantics_nv
         results['disp_nv'] = disp_nv
         results['loss_dict'] = loss_dict
-
         psnr_ = psnr(results[f'rgb'], all_rgb_gt)
         results['psnr'] = psnr_
         return results
@@ -165,7 +175,7 @@ class NeRFSystem(LightningModule):
         log = {'val_loss': loss}
 
         save_semantic = SaveSemantics('carla')
-        if batch_nb == 0:
+        if batch_nb == 0 and _DEBUG is not True:
             W, H = self.hparams.img_wh
             input_img = batch['input_img'][0].cpu()
             input_img = input_img * 0.5 + 0.5
@@ -182,11 +192,9 @@ class NeRFSystem(LightningModule):
             target_seg = target_seg / 255.0
 
             stack = torch.stack([input_img, input_seg, target_img, target_seg])
-            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
-                                              stack, self.global_step)
 
-            pred_seg = results['semantic_nv'].permute(0, 2, 1).view(1, self.hparams.num_classes, H, W).cpu()
-            pred_seg = torch.argmax(pred_seg, dim=1)
+
+            pred_seg = torch.argmax(results['semantic_nv'], dim=1).cpu()
             pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
             pred_seg = pred_seg / 255.0
 
@@ -195,8 +203,12 @@ class NeRFSystem(LightningModule):
             pred_depth = visualize_depth(results['depth'].view(H, W).cpu())
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
+
+
+            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
+                                                  stack, self.global_step)
             self.logger.experiment.add_images('val/predictions',
-                                              stack_pred, self.global_step)
+                                                  stack_pred, self.global_step)
 
         log['val_psnr'] = results['psnr']
 
@@ -213,7 +225,7 @@ class NeRFSystem(LightningModule):
 def main(hparams):
     system = NeRFSystem(hparams)
     checkpoint_callback = \
-        ModelCheckpoint(dirpath=os.path.join(hparams.log_dir,f'ckpts/{hparams.exp_name}'),
+        ModelCheckpoint(dirpath=os.path.join(hparams.log_dir, f'ckpts/{hparams.exp_name}'),
                         filename='{epoch}-{val_loss:.2f}',
                         monitor='val/psnr',
                         mode='max',

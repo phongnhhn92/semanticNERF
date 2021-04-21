@@ -94,8 +94,27 @@ def get_ndc_rays(H, W, focal, near, rays_o, rays_d):
 
     return rays_o, rays_d
 
+def one_hot_encoding(labels, C):
+    '''
+    Converts an integer label torch.autograd.Variable to a one-hot Variable.
+    Parameters
+    ----------
+    labels : torch.autograd.Variable of torch.cuda.LongTensor
+        N x 1 x H x W, where N is batch size.
+        Each value is an integer representing correct classification.
+    C : integer.
+        number of classes in labels.
+    Returns
+    -------
+    target : torch.autograd.Variable of torch.cuda.FloatTensor
+        N x C x H x W, where C is class number. One-hot encoded.
+    '''
+    one_hot = torch.FloatTensor(labels.size(0), C, labels.size(2), labels.size(3)).to(labels.device).zero_()
+    target = one_hot.scatter_(1, labels.data, 1)
 
-def getRandomRays(hparams, data, semantics_nv, alpha_nv, style_code):
+    return target
+
+def getRandomRays(hparams, data, semantics_nv, alpha_nv, style_code, feat_channel = 20):
     all_rgb_gt = []
     all_rays = []
     all_semantics = []
@@ -107,14 +126,13 @@ def getRandomRays(hparams, data, semantics_nv, alpha_nv, style_code):
         # Conver rgb values from 0 to 1
         target_rays_gt = target_rays_gt * 0.5 + 0.5
 
-        rays_style_code = repeat(style_code_b.unsqueeze(0), '1 n1 -> r n1', r=hparams.num_rays)
-
         # Randomly sample a few rays in the target view.
         pix_inds = torch.randint(0, target_rays.shape[0], (hparams.num_rays,))
         rays = target_rays[pix_inds]
         rays_gt = target_rays_gt[pix_inds]
         rays_semantics = semantics_nv_b[pix_inds]
         rays_alphas = alpha_nv_b[pix_inds]
+        rays_style_code = style_code_b[pix_inds]
 
         all_rgb_gt.append(rays_gt)
         all_rays.append(rays)
@@ -127,6 +145,6 @@ def getRandomRays(hparams, data, semantics_nv, alpha_nv, style_code):
     all_rays = torch.stack(all_rays).view(-1, 6)  # (SB * num_rays, 6)
     all_semantics = torch.stack(all_semantics).view(-1, _)
     all_alphas = torch.stack(all_alphas).view(-1, hparams.num_planes)
-    all_styles = torch.stack(all_styles).view(-1, hparams.style_feat)
+    all_styles = torch.stack(all_styles).view(-1, feat_channel)
 
     return all_rgb_gt, all_rays, all_semantics, all_alphas, all_styles

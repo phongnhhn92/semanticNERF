@@ -42,7 +42,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27,
-                 in_channels_style=256,
+                 in_channels_style=20,
                  seg_classes = 13,
                  seg_layers = 3,
                  skips=[4]):
