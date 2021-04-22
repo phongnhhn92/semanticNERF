@@ -26,14 +26,7 @@ from utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = True
-
-
-# TODO:
-# 0. Fix disp visualization in val step (done)
-# 1. Replace simple CNN encoder with LTN
-# 2. Sample rays from multiple target views instead of using a single target
-# 3. Use a pre-trained resenet encoder for LTN
+_DEBUG = False
 
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
