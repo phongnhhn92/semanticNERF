@@ -32,7 +32,7 @@ class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
-        self.loss = loss_dict['color'](coef=1)
+        self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
 
         self.embedding_xyz = Embedding(3, 10)
         self.embedding_dir = Embedding(3, 4)
@@ -44,9 +44,9 @@ class NeRFSystem(LightningModule):
         # SUN model
         self.SUN = SUNModel(self.hparams)
         # style_encoder
-        resnet = torchvision.models.resnet18(pretrained=True)
+        resnet = torchvision.models.resnet18(pretrained=False)
         self.encoder = nn.Sequential(*list(resnet.children()))[:-2]
-        self.models = {'nerf': self.nerf_model, 'sun': self.SUN}
+        self.models = {'nerf': self.nerf_model, 'sun': self.SUN,'resnet':self.encoder}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -55,9 +55,10 @@ class NeRFSystem(LightningModule):
 
     def forward(self, data, training=True):
         results = defaultdict(list)
+
         # Get style code from the style image
-        with torch.no_grad():
-            style_code = self.encoder(data['style_img'])
+        style_code = self.encoder(data['style_img'])
+
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
         loss_dict, semantics_nv, disp_nv, alpha_nv, appearance_nv \
             = self.SUN(data, style_code, d_loss=self.hparams.use_disparity_loss)
@@ -185,7 +186,6 @@ class NeRFSystem(LightningModule):
             target_seg = target_seg / 255.0
 
             stack = torch.stack([input_img, input_seg, target_img, target_seg])
-
 
             pred_seg = torch.argmax(results['semantic_nv'], dim=1).cpu()
             pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)

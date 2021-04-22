@@ -2,7 +2,7 @@ from torch import nn
 
 
 class ColorLoss(nn.Module):
-    def __init__(self, coef=1):
+    def __init__(self, coef=10):
         super().__init__()
         self.coef = coef
         self.loss = nn.MSELoss(reduction='mean')

@@ -32,8 +32,8 @@ class SPADEGenerator(BaseNetwork):
             else:
                 self.fc = nn.Conv2d(self.opts.num_classes, 16 * nf, 3, padding=1)
         self.head_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
-        # self.G_middle_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
-        # self.G_middle_1 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
+        self.G_middle_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
+        self.G_middle_1 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
 
         self.up_0 = SPADEResnetBlock((16 * nf), 8 * nf, opts)
         self.up_1 = SPADEResnetBlock((8 * nf), 4 * nf, opts)
@@ -75,13 +75,13 @@ class SPADEGenerator(BaseNetwork):
             x = F.interpolate(seg, size=(self.sh, self.sw))
             x = self.fc(x)
         x = x.view(-1, 16 * self.opts.ngf, self.sh, self.sw)
-        x = self.up(x)
         x = self.head_0(x, seg)
-        # x = self.G_middle_0(x, seg)
+        x = self.up(x)
+        x = self.G_middle_0(x, seg)
         # if self.opts.num_upsampling_layers == 'more' or \
         #    self.opts.num_upsampling_layers == 'most':
         #     x = self.up(x)
-        # x = self.G_middle_1(x, seg)
+        x = self.G_middle_1(x, seg)
         x = self.up(x)
         x = self.up_0(x, seg)
         x = self.up(x)
