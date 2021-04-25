@@ -42,7 +42,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27,
-                 in_channels_style=20,
+                 in_channels_style=128,
                  seg_classes = 13,
                  seg_layers = 3,
                  skips=[4]):
@@ -60,23 +60,13 @@ class NeRF(nn.Module):
         self.in_channels_dir = in_channels_dir
         self.seg_classes = seg_classes
         self.seg_layers = seg_layers
-        self.skips = skips
-
-        #Semantic encoding layer
-        for j in range(self.seg_layers):
-            if j == 0:
-                layer = nn.Linear(self.seg_classes, W)
-            else:
-                layer = nn.Linear(W, W)
-            layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"seg_encoding_{j + 1}", layer)
 
         # xyz encoding layers
         for i in range(D):
             if i == 0:
-                layer = nn.Linear(W + in_channels_xyz + in_channels_style, W)
+                layer = nn.Linear(in_channels_xyz + in_channels_style, W)
             elif i in skips:
-                layer = nn.Linear(W+in_channels_xyz, W)
+                layer = nn.Linear(W+in_channels_style, W)
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))
@@ -96,7 +86,7 @@ class NeRF(nn.Module):
                         nn.Linear(W//2, 3),
                         nn.Sigmoid())
 
-    def forward(self, x, seg, style):
+    def forward(self, x, style):
         """
         Encodes input (xyz+dir) to rgb+sigma (not ready to render yet).
         For rendering this ray, please see rendering.py
@@ -117,16 +107,12 @@ class NeRF(nn.Module):
         input_xyz, input_dir = \
                 torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
 
-        seg_ = seg
-        for i in range(self.seg_layers):
-            seg_ = getattr(self, f"seg_encoding_{i+1}")(seg_)
-
         xyz_ = input_xyz
         for i in range(self.D):
             if i == 0:
-                xyz_ = torch.cat([xyz_, seg_, style],dim=-1)
+                xyz_ = torch.cat([xyz_, style],dim=-1)
             if i in self.skips:
-                xyz_ = torch.cat([input_xyz, xyz_], -1)
+                xyz_ = torch.cat([style, xyz_], -1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma_color = self.sigma_color(xyz_)

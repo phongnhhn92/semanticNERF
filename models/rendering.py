@@ -50,7 +50,6 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 def render_rays(models,
                 embeddings,
                 rays,
-                segs,
                 alphas,
                 styles,
                 near,
@@ -82,7 +81,7 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
 
-    def inference(results, model, xyz, seg, style, z_vals):
+    def inference(results, model, xyz, style, z_vals):
         """
         Helper function that performs model inference.
         Inputs:
@@ -104,7 +103,6 @@ def render_rays(models,
         """
         N_samples_ = xyz.shape[1]
         xyz_ = rearrange(xyz, 'n1 n2 c -> (n1 n2) c')  # (N_rays*N_samples_, 3)
-        seg_ = rearrange(seg, 'n1 n2 c -> (n1 n2) c')  # (N_rays*N_samples_, 13)
         style_ = rearrange(style, 'n1 n2 c -> (n1 n2) c')  # (N_rays*N_samples_, 13)
 
         # Perform model inference to get rgb and raw sigma
@@ -118,7 +116,7 @@ def render_rays(models,
             xyz_embedded = embedding_xyz(xyz_[i:i + chunk])
             xyzdir_embedded = torch.cat([xyz_embedded,
                                              dir_embedded_[i:i + chunk]], 1)
-            out_chunks += [model(xyzdir_embedded, seg_[i:i + chunk], style_[i:i + chunk])]
+            out_chunks += [model(xyzdir_embedded, style_[i:i + chunk])]
 
         out = torch.cat(out_chunks, 0)
         # out = out.view(N_rays, N_samples_, 4)
@@ -193,15 +191,12 @@ def render_rays(models,
         # combine coarse and fine samples
 
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
-    # Expand the Semantic input
-    segs = rearrange(segs, 'n1 c -> n1 1 c')
-    segs_fine = repeat(segs, 'n1 1 c -> n1 n2 c', n2=z_vals.shape[1])
 
     # Expand the styles input
     styles = rearrange(styles, 'n1 c -> n1 1 c')
     styles_fine = repeat(styles, 'n1 1 c -> n1 n2 c', n2=z_vals.shape[1])
 
     results = {}
-    inference(results, models, xyz_fine, segs_fine, styles_fine, z_vals)
+    inference(results, models, xyz_fine, styles_fine, z_vals)
 
     return results

@@ -90,7 +90,6 @@ class NeRFSystem(LightningModule):
                 render_rays(self.nerf_model,
                             self.embeddings,
                             all_rays[i:i + chunk],
-                            all_semantics[i:i + chunk],
                             all_alphas[i:i + chunk],
                             all_appearance[i:i + chunk],
                             self.hparams.near_plane,
