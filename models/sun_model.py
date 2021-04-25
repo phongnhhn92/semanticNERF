@@ -11,7 +11,7 @@ from .mpi import ApplyAssociation
 from .mpi import ApplyHomography
 from .mpi import ComputeHomography
 from .semantic_embedding import SemanticEmbedding
-from models.spade import MLPEncoder,SPADEGenerator
+from models.spade import ConvEncoder,SPADEGenerator
 
 class MulLayerConvNetwork(torch.nn.Module):
 
@@ -82,7 +82,7 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-        self.mlp_encoder = MLPEncoder(opts)
+        self.encoder = ConvEncoder(opts)
         spade_ltn_opts = deepcopy(opts)
         spade_ltn_opts.__dict__[
             'num_out_channels'] = opts.feats_per_layer
@@ -94,16 +94,15 @@ class SUNModel(torch.nn.Module):
             'label_nc'] = opts.num_layers * opts.embedding_size
         self.spade_ltn = SPADEGenerator(spade_ltn_opts, no_tanh=True)
 
-    def forward(self, input_data, style_code, d_loss = False):
-        style_ = self.mlp_encoder(style_code)
-
+    def forward(self, input_data, style_img, d_loss = False):
+        output = self.encoder(style_img)
         target_sem = input_data['target_seg']
         seg_mul_layer, alpha, associations = self._infere_scene_repr(
             input_data)
 
         semantics_nv = self._render_nv_semantics(
             input_data, seg_mul_layer, alpha, associations)
-        appearance_nv_feats = self.spade_ltn(semantics_nv, z=style_)
+        appearance_nv_feats = self.spade_ltn(semantics_nv, output['mu'])
 
         semantics_loss = self.compute_semantics_loss(
             semantics_nv, target_sem)

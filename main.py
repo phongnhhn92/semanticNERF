@@ -43,10 +43,7 @@ class NeRFSystem(LightningModule):
         self.nerf_model = NeRF(in_channels_style=self.hparams.feats_per_layer)
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        # style_encoder
-        resnet = torchvision.models.resnet18(pretrained=False)
-        self.encoder = nn.Sequential(*list(resnet.children()))[:-2]
-        self.models = {'nerf': self.nerf_model, 'sun': self.SUN,'resnet':self.encoder}
+        self.models = {'nerf': self.nerf_model, 'sun': self.SUN}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -56,12 +53,12 @@ class NeRFSystem(LightningModule):
     def forward(self, data, training=True):
         results = defaultdict(list)
 
-        # Get style code from the style image
-        style_code = self.encoder(data['style_img'])
+        # # Get style code from the style image
+        # style_code = self.encoder(data['style_img'])
 
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
         loss_dict, semantics_nv, disp_nv, alpha_nv, appearance_nv \
-            = self.SUN(data, style_code, d_loss=self.hparams.use_disparity_loss)
+            = self.SUN(data, data['style_img'], d_loss=self.hparams.use_disparity_loss)
 
         # Get one-hot encoded semantic maps of the novel view
         semantics_nv_one = torch.argmax(torch.softmax(semantics_nv, dim=1), dim=1).unsqueeze(1)

@@ -184,12 +184,13 @@ def render_rays(models,
         perturb_rand = perturb * torch.rand_like(z_vals)
         z_vals = lower + (upper - lower) * perturb_rand
 
-    z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-    z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
-                             N_importance, det=(perturb == 0))
+    if N_importance > 0:
+        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
+        z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
+                                 N_importance, det=(perturb == 0))
 
-    z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
-    # combine coarse and fine samples
+        z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
+        # combine coarse and fine samples
 
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
     # Expand the Semantic input

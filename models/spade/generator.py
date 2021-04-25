@@ -24,13 +24,8 @@ class SPADEGenerator(BaseNetwork):
         num_context_chans = 0
         nf = opts.ngf
         self.sw, self.sh = self.compute_latent_vector_size(opts)
-        if opts.use_vae:
-            self.fc = nn.Linear(opts.z_dim, 16 * nf * self.sw * self.sh)
-        else:
-            if opts.use_instance_mask:
-                self.fc = nn.Conv2d(self.opts.num_classes+1, 16 * nf, 3, padding=1)
-            else:
-                self.fc = nn.Conv2d(self.opts.num_classes, 16 * nf, 3, padding=1)
+        self.fc = nn.Linear(opts.z_dim, 16 * nf * self.sw * self.sh)
+
         self.head_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
         self.G_middle_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
         self.G_middle_1 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
@@ -67,13 +62,9 @@ class SPADEGenerator(BaseNetwork):
 
         return sw, sh
 
-    def forward(self, seg_map, z=None):
+    def forward(self, seg_map, z, features_z=None):
         seg = seg_map
-        if self.opts.use_vae:
-            x = self.fc(z)
-        else:
-            x = F.interpolate(seg, size=(self.sh, self.sw))
-            x = self.fc(x)
+        x = self.fc(z)
         x = x.view(-1, 16 * self.opts.ngf, self.sh, self.sw)
         x = self.head_0(x, seg)
         x = self.up(x)
