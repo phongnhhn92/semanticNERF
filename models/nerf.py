@@ -60,6 +60,7 @@ class NeRF(nn.Module):
         self.in_channels_dir = in_channels_dir
         self.seg_classes = seg_classes
         self.seg_layers = seg_layers
+        self.skips = skips
 
         # xyz encoding layers
         for i in range(D):
