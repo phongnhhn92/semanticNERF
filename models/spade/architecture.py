@@ -39,10 +39,10 @@ class SPADEResnetBlock(nn.Module):
             self.conv_s = spectral_norm(self.conv_s)
         # print(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
         # exit()
-        self.norm_0 = SPADE(opts.spade_k_size, fin, opts.num_classes+additional_sem_chans)
-        self.norm_1 = SPADE(opts.spade_k_size, fmiddle, opts.num_classes+additional_sem_chans)
+        self.norm_0 = SPADE(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
+        self.norm_1 = SPADE(opts.spade_k_size, fmiddle, opts.embedding_size+additional_sem_chans)
         if self.learned_shortcut:
-            self.norm_s = SPADE(opts.spade_k_size, fin, opts.num_classes+additional_sem_chans)
+            self.norm_s = SPADE(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
 
     def forward(self, x, seg):
         x_s = self.shortcut(x, seg)

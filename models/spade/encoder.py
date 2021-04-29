@@ -42,42 +42,27 @@ class ConvEncoder(BaseNetwork):
         # self.init_weights('xavier', gain=0.02)
         # self.init_weights('orthogonal')
 
-    def forward(self, x, get_features=False):
-        features_list = []
-        # if x.size(2) != 256 or x.size(3) != 256:
-        #     x_ = F.interpolate(x, size=(256, 256), mode='bilinear')
-        x_ = x
-        x_ = self.layer1(x_)
-        features_list.append(x_)
+    def forward(self, x):
+        if x.size(2) != 256 or x.size(3) != 256:
+            x = F.interpolate(x, size=(256, 256), mode='bilinear')
 
-        x_ = self.layer2(self.actvn(x_))
-        features_list.append(x_)
-
-        x_ = self.layer3(self.actvn(x_))
-        features_list.append(x_)
-
-        x_ = self.layer4(self.actvn(x_))
-        features_list.append(x_)
-
-        x_ = self.layer5(self.actvn(x_))
-        features_list.append(x_)
-
+        x = self.layer1(x)
+        x = self.layer2(self.actvn(x))
+        x = self.layer3(self.actvn(x))
+        x = self.layer4(self.actvn(x))
+        x = self.layer5(self.actvn(x))
         if self.opts.crop_size >= 256:
-             x_ = self.layer6(self.actvn(x_))
-        x_ = self.actvn(x_)
-        features_list.append(x_)
+            x = self.layer6(self.actvn(x))
+        x = self.actvn(x)
 
-        x_ = x_.view(x_.size(0), -1)
-        mu = self.fc_mu(x_)
-        # if self.opts.use_vae:
-        #     logvar = self.fc_var(x)
-        #     z = self.reparameterize(mu, logvar)
-        #     return z, mu, logvar
-        # else:
-        if get_features:
-            return {'mu':mu, 'features':features_list}
+        x = x.view(x.size(0), -1)
+        mu = self.fc_mu(x)
+        if self.opts.use_vae:
+            logvar = self.fc_var(x)
+            z = self.reparameterize(mu, logvar)
+            return z, mu, logvar
         else:
-            return {'mu':mu}
+            return mu
 
     def reparameterize(self, mu, logvar):
         if not self.training:

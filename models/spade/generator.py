@@ -15,7 +15,7 @@ from .architecture import SPADEResnetBlock as SPADEResnetBlock
 class SPADEGenerator(BaseNetwork):
     def __init__(self, opts, no_tanh=True):
         '''
-            Since we extract layered features 
+            Since we extract layered features
         '''
         super().__init__()
         # opts = self.modify_commandline_options(opts, True)
@@ -24,8 +24,13 @@ class SPADEGenerator(BaseNetwork):
         num_context_chans = 0
         nf = opts.ngf
         self.sw, self.sh = self.compute_latent_vector_size(opts)
-        self.fc = nn.Linear(opts.z_dim, 16 * nf * self.sw * self.sh)
-
+        if opts.use_vae:
+            self.fc = nn.Linear(opts.z_dim, 16 * nf * self.sw * self.sh)
+        else:
+            if opts.use_instance_mask:
+                self.fc = nn.Conv2d(self.opts.embedding_size+1, 16 * nf, 3, padding=1)
+            else:
+                self.fc = nn.Conv2d(self.opts.embedding_size, 16 * nf, 3, padding=1)
         self.head_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
         self.G_middle_0 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
         self.G_middle_1 = SPADEResnetBlock((16 * nf), 16 * nf, opts)
@@ -62,16 +67,20 @@ class SPADEGenerator(BaseNetwork):
 
         return sw, sh
 
-    def forward(self, seg_map, z, features_z=None):
+    def forward(self, seg_map, z=None):
         seg = seg_map
-        x = self.fc(z)
+        if self.opts.use_vae:
+            x = self.fc(z)
+        else:
+            x = F.interpolate(seg, size=(self.sh, self.sw))
+            x = self.fc(x)
         x = x.view(-1, 16 * self.opts.ngf, self.sh, self.sw)
         x = self.head_0(x, seg)
         x = self.up(x)
         x = self.G_middle_0(x, seg)
-        # if self.opts.num_upsampling_layers == 'more' or \
-        #    self.opts.num_upsampling_layers == 'most':
-        #     x = self.up(x)
+        if self.opts.num_upsampling_layers == 'more' or \
+           self.opts.num_upsampling_layers == 'most':
+            x = self.up(x)
         x = self.G_middle_1(x, seg)
         x = self.up(x)
         x = self.up_0(x, seg)
@@ -81,9 +90,9 @@ class SPADEGenerator(BaseNetwork):
         x = self.up_2(x, seg)
         x = self.up(x)
         x = self.up_3(x, seg)
-        # if self.opts.num_upsampling_layers == 'most':
-        #     x = self.up(x)
-        #     x = self.up_4(x, seg)
+        if self.opts.num_upsampling_layers == 'most':
+            x = self.up(x)
+            x = self.up_4(x, seg)
         x = self.conv_img(F.leaky_relu(x, 2e-1))
         if self.no_tanh:
             return x

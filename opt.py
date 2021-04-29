@@ -9,6 +9,9 @@ def get_opts():
     parser.add_argument('--log_dir', type=str,
                         default='./logs',
                         help='log directory of trained model')
+    parser.add_argument('--mode', type=str,
+                        default='train',
+                        help='mode of model')
     parser.add_argument('--dataset_name', type=str, default='blender',
                         choices=['blender', 'llff','carla','carlaGVS'],
                         help='which dataset to train/val')
@@ -32,7 +35,7 @@ def get_opts():
     parser.add_argument('--use_style_encoder', default=False, action='store_true')
     parser.add_argument('--style_feat', type=int, default=256,
                         help='output dimension of the style encoder')
-    parser.add_argument('--use_vae', default=False, action='store_true')
+    parser.add_argument('--use_vae', default=True, action='store_true')
     parser.add_argument('--use_disparity_loss', default=False, action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
                             help='for carla=0.1, for other set to 0.5')
@@ -56,6 +59,8 @@ def get_opts():
     parser.add_argument('--num_gpus', type=int, default=1,
                         help='number of gpus')
 
+    parser.add_argument('--SUN_path', type=str, default=None,
+                        help='pretrained SUN_model to load')
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
     parser.add_argument('--prefixes_to_ignore', nargs='+', type=str, default=['loss'],
