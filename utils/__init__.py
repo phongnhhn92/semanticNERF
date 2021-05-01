@@ -8,6 +8,14 @@ from .warmup_scheduler import GradualWarmupScheduler
 
 from .visualization import *
 
+def lr_func(num_epochs):
+    def func(s):
+        if s < (num_epochs//2):
+            return 1
+        else:
+            return max(0, 1-(2*s-num_epochs)/num_epochs)
+    return func
+
 def get_parameters(models):
     """Get all model parameters recursively."""
     parameters = []
