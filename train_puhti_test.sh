@@ -13,5 +13,5 @@ module load gcc/8.3.0 cuda/10.1.168 cudnn cmake
 
 srun python train_GVSNETPlus.py --dataset_name carlaGVS --root_dir /scratch/project_2001055/dataset/GVS \
                --log_dir /scratch/project_2001055/trained_logs/semanticNERF/logs \
-               --img_wh 256 256 --num_epochs 1 --batch_size 30 \
+               --img_wh 256 256 --num_epochs 1 --batch_size 8 \
                --num_gpus 4 --exp_name exp_carla_GVSNetPlus_test
