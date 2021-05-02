@@ -5,7 +5,7 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=gputest
+#SBATCH --partition=gpu
 #SBATCH --gres=gpu:v100:4
 #SBATCH -o train_o_carla.txt
 #SBATCH -e train_e_carla.txt
