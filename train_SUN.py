@@ -67,66 +67,66 @@ class SUNNetwork(LightningModule):
         return loss
 
 
-def val_dataloader(self):
-    return DataLoader(self.val_dataset,
-                      shuffle=False,
-                      num_workers=0 if _DEBUG else 8,
-                      batch_size=1,  # validate one image (H*W rays) at a time
-                      pin_memory=True)
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset,
+                          shuffle=False,
+                          num_workers=0 if _DEBUG else 8,
+                          batch_size=1,  # validate one image (H*W rays) at a time
+                          pin_memory=True)
 
 
-def validation_step(self, batch, batch_nb):
-    loss_dict, semantics_nv, disp_nv, alpha_nv = self(batch, mode='generator')
-    loss = sum([v for k,v in loss_dict.items()])
-    log = {'val_loss': loss}
+    def validation_step(self, batch, batch_nb):
+        loss_dict, semantics_nv, disp_nv, alpha_nv = self(batch, mode='generator')
+        loss = sum([v for k,v in loss_dict.items()])
+        log = {'val_loss': loss}
 
-    save_semantic = SaveSemantics('carla')
-    if batch_nb == 0 and _DEBUG is not True:
-        input_img = batch['input_img'][0].cpu()
-        input_img = input_img * 0.5 + 0.5
+        save_semantic = SaveSemantics('carla')
+        if batch_nb == 0 :
+            input_img = batch['input_img'][0].cpu()
+            input_img = input_img * 0.5 + 0.5
 
-        input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
-        input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
-        input_seg = input_seg / 255.0
-        # from torchvision.utils import save_image
-        # save_image(input_seg, 'img1.png')
+            input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
+            input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
+            input_seg = input_seg / 255.0
+            # from torchvision.utils import save_image
+            # save_image(input_seg, 'img1.png')
 
-        target_img = batch['target_img'][0].cpu()
-        target_img = target_img * 0.5 + 0.5
+            target_img = batch['target_img'][0].cpu()
+            target_img = target_img * 0.5 + 0.5
 
-        target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
-        target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
-        target_seg = target_seg / 255.0
+            target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
+            target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
+            target_seg = target_seg / 255.0
 
-        stack = torch.stack([input_img, input_seg, target_img, target_seg])
+            stack = torch.stack([input_img, input_seg, target_img, target_seg])
 
-        pred_seg = torch.argmax(semantics_nv[0], dim=0).cpu()
-        pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
-        pred_seg = pred_seg / 255.0
+            pred_seg = torch.argmax(semantics_nv[0], dim=0).cpu()
+            pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
+            pred_seg = pred_seg / 255.0
 
-        pred_disp = save_depth(disp_nv.squeeze().cpu())
+            pred_disp = save_depth(disp_nv.squeeze().cpu())
 
-        stack_pred = torch.stack([ pred_seg, pred_disp])
+            stack_pred = torch.stack([ pred_seg, pred_disp])
 
-        self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
-                                          stack, self.global_step)
-        self.logger.experiment.add_images('val/predictions',
-                                          stack_pred, self.global_step)
+            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
+                                              stack, self.global_step)
+            self.logger.experiment.add_images('val/predictions',
+                                              stack_pred, self.global_step)
 
-    return log
+        return log
 
 
-def validation_epoch_end(self, outputs):
-    mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+    def validation_epoch_end(self, outputs):
+        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
 
-    self.log('val/loss', mean_loss, prog_bar=True)
+        self.log('val/loss', mean_loss, prog_bar=True)
 
 
 def main(hparams):
     system = SUNNetwork(hparams)
     checkpoint_callback = \
         ModelCheckpoint(dirpath=os.path.join(hparams.log_dir, f'ckpts/{hparams.exp_name}'),
-                        filename='{epoch}-{val_loss:.2f}',
+                        filename='{epoch}',
                         monitor='val/loss',
                         mode='max',
                         save_top_k=5)
@@ -146,6 +146,7 @@ def main(hparams):
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       sync_batchnorm=True if hparams.num_gpus > 1 else False,
+                      limit_train_batches=10 if _DEBUG else 1.0,
                       num_sanity_val_steps=1,
                       benchmark=True,
                       profiler="simple" if hparams.num_gpus == 1 else None,
