@@ -16,3 +16,10 @@ srun python ../train_SUN.py --num_gpus 4 --dataset_name carlaGVS --root_dir /scr
         --img_wh 256 256 --noise_std 0.1 --num_epochs 30 --batch_size 8  --num_rays 32 --N_importance 96 \
         --optimizer adam --lr 1e-4 --lr_scheduler steplr  --decay_step 10 25  --decay_gamma 0.5 \
         --use_disparity_loss --exp_name exp_carla_GVS_SUN
+
+# CSC cPouta
+#python train_SUN.py --num_gpus 2 --dataset_name carlaGVS --root_dir /mnt/disk1/dataset/GVS \
+#        --log_dir /mnt/disk1/dataset/GVS/logs \
+#        --img_wh 256 256 --noise_std 0.1 --num_epochs 30 --batch_size 4  --num_rays 32 --N_importance 96 \
+#        --optimizer adam --lr 5e-5 --lr_scheduler steplr  --decay_step 10 25  --decay_gamma 0.5 \
+#        --use_disparity_loss --exp_name exp_carla_GVS_SUN
