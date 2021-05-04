@@ -85,8 +85,11 @@ class NeRF(nn.Module):
 
         # direction encoding layers
         self.dir_encoding = nn.Sequential(
-                                nn.Linear(2*W+in_channels_dir, W//2),
-                                nn.ReLU(True))
+                                nn.Linear(2*W+in_channels_dir, W),
+                                nn.ReLU(True),
+                                nn.Linear(W, W // 2),
+                                nn.ReLU(True),
+                            )
 
         # output layers
         self.sigma_color = nn.Linear(W, 1)
