@@ -122,7 +122,13 @@ class NeRFSystem(LightningModule):
                     final_results[k] = results[k]
             else:
                 for k, v in results.items():
-                    final_results[k] = torch.stack([final_results[k], results[k]], dim=0)
+                    final_results[k] = torch.cat([final_results[k], results[k]], dim=0)
+        for k,v in final_results.items():
+            if training:
+                assert final_results[k].shape[0] == SB * self.hparams.num_rays, 'Error reshaping !'
+                final_results[k] = final_results[k].view(SB, self.hparams.num_rays, -1)
+            else:
+                final_results[k] = final_results[k].unsqueeze(0)
 
         loss_dict['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         final_results['semantic_nv'] = semantics_nv
@@ -205,7 +211,7 @@ class NeRFSystem(LightningModule):
 
             pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
             pred_depth = visualize_depth(results['depth'].squeeze().view(H, W).cpu())
-            pred_rgb = results['rgb'].permute(1, 0).view(3, H, W).cpu()
+            pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
 
