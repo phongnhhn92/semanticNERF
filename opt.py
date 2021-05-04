@@ -107,27 +107,6 @@ def get_opts():
                             help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
     parser.add_argument('--use_instance_mask', action='store_true',
                             help='is paased, instance mask will be assuned to be present')
-    ## Generator settings
-    parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
-    parser.add_argument('--init_type', type=str, default='xavier',
-                            help='network initialization [normal|xavier|kaiming|orthogonal]')
-    parser.add_argument('--init_variance', type=float, default=0.02,
-                            help='variance of the initialization distribution')
-    parser.add_argument('--z_dim', type=int, default=256, help="dimension of the latent z vector")
-
-    ## Discriminator setting
-    parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
-    parser.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')
-    parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for vgg loss')
-    parser.add_argument('--no_ganFeat_loss', action='store_true',
-                            help='if specified, do *not* use discriminator feature matching loss')
-    parser.add_argument('--no_vgg_loss', action='store_true',
-                            help='if specified, do *not* use VGG feature matching loss')
-    parser.add_argument('--gan_mode', type=str, default='hinge', help='(ls|original|hinge)')
-    parser.add_argument('--netD', type=str, default='multiscale', help='(n_layers|multiscale|image)')
-    parser.add_argument('--lambda_kld', type=float, default=0.001)
-    parser.add_argument('--gen_lr', default=0.0001, type=float)
-    parser.add_argument('--disc_lr', default=0.0004, type=float)
 
     ######### Arguments for SPADE
     parser.add_argument('--d_step_per_g', type=int, default=1, help='num of d updates for each g update')

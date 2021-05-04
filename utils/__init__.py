@@ -8,14 +8,6 @@ from .warmup_scheduler import GradualWarmupScheduler
 
 from .visualization import *
 
-def lr_func(num_epochs):
-    def func(s):
-        if s < (num_epochs//2):
-            return 1
-        else:
-            return max(0, 1-(2*s-num_epochs)/num_epochs)
-    return func
-
 def get_parameters(models):
     """Get all model parameters recursively."""
     parameters = []
@@ -23,11 +15,34 @@ def get_parameters(models):
         for model in models:
             parameters += get_parameters(model)
     elif isinstance(models, dict):
-        for model in models.values():
+        for k, model in models.items():
             parameters += get_parameters(model)
     else: # models is actually a single pytorch model
         parameters += list(models.parameters())
     return parameters
+
+def get_optimizer2(hparams, feature_models, nerf_model):
+    eps = 1e-8
+    parameters = get_parameters(feature_models)
+    if hparams.optimizer == 'sgd':
+        optimizer = SGD(parameters, lr=hparams.lr,
+                        momentum=hparams.momentum, weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'adam':
+        optimizer = Adam([
+                {'params': parameters},
+                {'params': nerf_model.parameters(), 'lr': hparams.lr}
+            ], lr=2*hparams.lr, eps=eps,
+            weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'radam':
+        optimizer = optim.RAdam(parameters, lr=hparams.lr, eps=eps,
+                                weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'ranger':
+        optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps,
+                                 weight_decay=hparams.weight_decay)
+    else:
+        raise ValueError('optimizer not recognized!')
+
+    return optimizer
 
 def get_optimizer(hparams, models):
     eps = 1e-8
