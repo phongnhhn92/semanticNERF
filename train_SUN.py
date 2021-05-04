@@ -1,5 +1,5 @@
 import os
-from collections import defaultdict
+
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TestTubeLogger
@@ -60,11 +60,10 @@ class SUNNetwork(LightningModule):
         self.log('train/lr', get_learning_rate(self.optimizer))
 
         loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv = self(batch, mode='training')
-        loss = sum([v for k,v in loss_dict.items()])
+        loss = sum([v for k, v in loss_dict.items()])
         self.log('train/loss', loss, prog_bar=True, on_step=True)
 
         return loss
-
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
@@ -73,14 +72,13 @@ class SUNNetwork(LightningModule):
                           batch_size=1,  # validate one image (H*W rays) at a time
                           pin_memory=True)
 
-
     def validation_step(self, batch, batch_nb):
         loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv = self(batch, mode='training')
-        loss = sum([v for k,v in loss_dict.items()])
+        loss = sum([v for k, v in loss_dict.items()])
         log = {'val_loss': loss}
 
         save_semantic = SaveSemantics('carla')
-        if batch_nb == 0 :
+        if batch_nb == 0:
             input_img = batch['input_img'][0].cpu()
             input_img = input_img * 0.5 + 0.5
 
@@ -105,7 +103,7 @@ class SUNNetwork(LightningModule):
 
             pred_disp = save_depth(disp_nv.squeeze().cpu())
 
-            stack_pred = torch.stack([ pred_seg, pred_disp])
+            stack_pred = torch.stack([pred_seg, pred_disp])
 
             self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
                                               stack, self.global_step)
@@ -113,7 +111,6 @@ class SUNNetwork(LightningModule):
                                               stack_pred, self.global_step)
 
         return log
-
 
     def validation_epoch_end(self, outputs):
         mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()

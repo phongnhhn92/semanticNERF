@@ -30,6 +30,7 @@ from utils import *
 seed_everything(100)
 _DEBUG = False
 
+
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
@@ -123,7 +124,7 @@ class NeRFSystem(LightningModule):
             else:
                 for k, v in results.items():
                     final_results[k] = torch.cat([final_results[k], results[k]], dim=0)
-        for k,v in final_results.items():
+        for k, v in final_results.items():
             if training:
                 assert final_results[k].shape[0] == SB * self.hparams.num_rays, 'Error reshaping !'
                 final_results[k] = final_results[k].view(SB, self.hparams.num_rays, -1)
