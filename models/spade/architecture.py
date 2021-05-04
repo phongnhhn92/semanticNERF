@@ -30,13 +30,13 @@ class SPADEResnetBlock(nn.Module):
         self.conv_1 = nn.Conv2d(fmiddle, fout, kernel_size=3, padding=1)
         if self.learned_shortcut:
             self.conv_s = nn.Conv2d(fin, fout, kernel_size=1, bias=False)
-
-        # apply spectral norm if specified
-        # if 'spectral' in opts.norm_G:
-        self.conv_0 = spectral_norm(self.conv_0)
-        self.conv_1 = spectral_norm(self.conv_1)
-        if self.learned_shortcut:
-            self.conv_s = spectral_norm(self.conv_s)
+        self.final = nn.Conv2d(fout, fout, 1)
+        # # apply spectral norm if specified
+        # # if 'spectral' in opts.norm_G:
+        # self.conv_0 = spectral_norm(self.conv_0)
+        # self.conv_1 = spectral_norm(self.conv_1)
+        # if self.learned_shortcut:
+        #     self.conv_s = spectral_norm(self.conv_s)
         # print(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
         # exit()
         self.norm_0 = SPADE(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
@@ -49,6 +49,7 @@ class SPADEResnetBlock(nn.Module):
         dx = self.conv_0(F.relu(self.norm_0(x, seg)))
         dx = self.conv_1(F.relu(self.norm_1(dx, seg)))
         out = x_s + dx
+        out = F.leaky_relu(self.final(out))
         return out
 
     def shortcut(self, x, seg):

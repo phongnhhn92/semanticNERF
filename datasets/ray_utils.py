@@ -132,15 +132,15 @@ def getRandomRays(hparams, data, alpha_nv, style_code, feat_channel = 20):
         rays_alphas = alpha_nv_b[pix_inds]
         rays_style_code = style_code_b[pix_inds]
 
-        all_rgb_gt.append(rays_gt)
-        all_rays.append(rays)
-        all_alphas.append(rays_alphas)
-        all_styles.append(rays_style_code)
+        all_rgb_gt.append(rays_gt.unsqueeze(0))
+        all_rays.append(rays.unsqueeze(0))
+        all_alphas.append(rays_alphas.unsqueeze(0))
+        all_styles.append(rays_style_code.unsqueeze(0))
 
 
-    all_rgb_gt = torch.stack(all_rgb_gt).view(-1, 3)  # (SB * num_rays, 3)
-    all_rays = torch.stack(all_rays).view(-1, 6)  # (SB * num_rays, 6)
-    all_alphas = torch.stack(all_alphas).view(-1, hparams.num_planes)
-    all_styles = torch.stack(all_styles).view(-1, feat_channel)
+    all_rgb_gt = torch.stack(all_rgb_gt).view(SB, hparams.num_rays, 3)  # (SB * num_rays, 3)
+    all_rays = torch.stack(all_rays).view(SB, hparams.num_rays, 6)  # (SB * num_rays, 6)
+    all_alphas = torch.stack(all_alphas).view(SB, hparams.num_rays, hparams.num_planes)
+    all_styles = torch.stack(all_styles).view(SB, hparams.num_rays, hparams.num_planes, feat_channel)
 
     return all_rgb_gt, all_rays, all_alphas, all_styles

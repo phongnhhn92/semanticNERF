@@ -35,10 +35,9 @@ class SUNNetwork(LightningModule):
 
     def forward(self, data, mode):
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        loss_dict, semantics_nv, disp_nv, alpha_nv \
-            = self.model(data, d_loss=self.hparams.use_disparity_loss,mode='training')
+        loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv = self.SUN(data, mode='training')
 
-        return loss_dict, semantics_nv, disp_nv, alpha_nv
+        return loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv
 
     def setup(self, stage):
         dataset = dataset_dict[self.hparams.dataset_name]
@@ -60,7 +59,7 @@ class SUNNetwork(LightningModule):
     def training_step(self, batch, batch_nb):
         self.log('train/lr', get_learning_rate(self.optimizer))
 
-        loss_dict, semantics_nv, disp_nv, alpha_nv = self(batch, mode='generator')
+        loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv = self(batch, mode='generator')
         loss = sum([v for k,v in loss_dict.items()])
         self.log('train/loss', loss, prog_bar=True, on_step=True)
 
@@ -76,7 +75,7 @@ class SUNNetwork(LightningModule):
 
 
     def validation_step(self, batch, batch_nb):
-        loss_dict, semantics_nv, disp_nv, alpha_nv = self(batch, mode='generator')
+        loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv = self(batch, mode='generator')
         loss = sum([v for k,v in loss_dict.items()])
         log = {'val_loss': loss}
 
