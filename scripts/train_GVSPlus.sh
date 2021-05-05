@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=PHONG
 #SBATCH --account=Project_2001055
-#SBATCH --time=00:15:00
+#SBATCH --time=72:00:00
 #SBATCH --mem-per-cpu=8G
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
