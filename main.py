@@ -134,7 +134,7 @@ class NeRFSystem(LightningModule):
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
                           shuffle=True,
-                          num_workers=0 if _DEBUG else 4,
+                          num_workers=0 if _DEBUG else 8,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
@@ -156,7 +156,7 @@ class NeRFSystem(LightningModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
                           shuffle=False,
-                          num_workers=0 if _DEBUG else 4,
+                          num_workers=0 if _DEBUG else 8,
                           batch_size=1,  # validate one image (H*W rays) at a time
                           pin_memory=True)
 
@@ -233,6 +233,7 @@ def main(hparams):
                       logger=logger,
                       weights_summary=None,
                       progress_bar_refresh_rate=1000 if hparams.num_gpus > 1 else 1,
+                      num_nodes = 1,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       sync_batchnorm=True if hparams.num_gpus > 1 else False,
