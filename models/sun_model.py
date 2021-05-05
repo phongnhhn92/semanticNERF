@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from copy import deepcopy
 from .conv_network import BaseEncoderDecoder
 from .conv_network import ConvBlock
 from .conv_network import ResBlock
@@ -10,6 +11,8 @@ from .mpi import ApplyAssociation
 from .mpi import ApplyHomography
 from .mpi import ComputeHomography
 from .semantic_embedding import SemanticEmbedding
+
+from models.spade import ConvEncoder,SPADEGenerator
 
 class MulLayerConvNetwork(torch.nn.Module):
 
@@ -33,8 +36,6 @@ class MulLayerConvNetwork(torch.nn.Module):
                                 total_alpha_channels + self.total_beta_channels
 
         self.discriptor_net = BaseEncoderDecoder(input_channels)
-        self.base_res_layers = nn.Sequential(
-            *[ResBlock(enc_features, 3) for i in range(2)])
         self.blending_alpha_seg_beta_pred = nn.Sequential(ResBlock(enc_features, 3),
                                                           ResBlock(
                                                               enc_features, 3),
@@ -53,8 +54,7 @@ class MulLayerConvNetwork(torch.nn.Module):
     def forward(self, input_sem):
         b, _, h, w = input_sem.shape
         feats_0 = self.discriptor_net(input_sem)
-        feats_1 = self.base_res_layers(feats_0)
-        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_1)
+        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_0)
         alphas = alpha_and_seg_beta[:, -self.total_alpha_channels:, :, :]
         seg = alpha_and_seg_beta[:, self.total_beta_channels:
                                     self.total_beta_channels + self.total_seg_channels, :, :]
@@ -83,32 +83,41 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-    def forward(self, input_data, d_loss = False, mode='inference'):
-        if mode == 'inference':
-            with torch.no_grad():
-                scene_representation = self._infere_scene_repr(input_data)
-            return scene_representation
-        else:
-            target_sem = input_data['target_seg']
-            seg_mul_layer, alpha, associations = self._infere_scene_repr(
-                input_data)
+        self.encoder = ConvEncoder(opts)
+        spade_ltn_opts = deepcopy(opts)
+        spade_ltn_opts.__dict__[
+            'num_out_channels'] = opts.feats_per_layer
+        spade_ltn_opts.__dict__[
+            'semantic_nc'] = opts.num_layers * opts.embedding_size
+        spade_ltn_opts.__dict__[
+            'embedding_size'] = opts.num_layers * opts.embedding_size
+        spade_ltn_opts.__dict__[
+            'label_nc'] = opts.num_layers * opts.embedding_size
+        self.spade_ltn = SPADEGenerator(spade_ltn_opts, no_tanh=True)
 
-            semantics_nv = self._render_nv_semantics(
-                input_data, seg_mul_layer, alpha, associations)
+    def forward(self, input_data, style_img, d_loss = False):
+        output = self.encoder(style_img)
+        target_sem = input_data['target_seg']
+        seg_mul_layer, alpha, associations = self._infere_scene_repr(
+            input_data)
 
-            semantics_loss = self.compute_semantics_loss(
-                semantics_nv, target_sem)
-            sun_loss = {'semantics_loss': semantics_loss}
+        semantics_nv = self._render_nv_semantics(
+            input_data, seg_mul_layer, alpha, associations)
+        appearance_nv_feats = self.spade_ltn(semantics_nv, output['mu'])
 
+        semantics_loss = self.compute_semantics_loss(
+            semantics_nv, target_sem)
+        sun_loss = {'semantics_loss': semantics_loss}
 
-            disp_iv = self.alpha_to_disp(
-                alpha, input_data['k_matrix'], self.opts.stereo_baseline, novel_view=False)
+        t_vec = input_data['t_vec']
+        disp_nv = self.alpha_to_disp(
+            alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
 
-            if d_loss:
-                disp_loss = F.l1_loss(disp_iv, input_data['input_disp'])
-                sun_loss['disp_loss'] = self.opts.disparity_weight * disp_loss
+        if d_loss:
+            disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
+            sun_loss['disp_loss'] = self.opts.disparity_weight * disp_loss
 
-            return sun_loss, semantics_nv.data, disp_iv.data, alpha.data
+        return sun_loss, semantics_nv.data, disp_nv.data, alpha.data, appearance_nv_feats.data
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
