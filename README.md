@@ -1,5 +1,10 @@
 # semanticNERF
 
+### TODO:
+05-05-2021
+1) upgrade NERF network
+2) rework the batch in NERF training
+
 #### Slide: [link](https://docs.google.com/presentation/d/1j3yNFRC8Yd_XPg7eKPdrRCBsmp2IfE-_BMG9QVAh7EY/edit?usp=sharing)
 
 #### 18-04-2021:
