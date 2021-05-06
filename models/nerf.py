@@ -133,6 +133,7 @@ class NeRF(nn.Module):
         xyz_encoding_final = self.xyz_encoding_final(xyz_)
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
+
         rgb = self.rgb(dir_encoding)
         out = torch.cat([rgb, sigma_color], -1)
 

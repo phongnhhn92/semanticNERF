@@ -1,18 +1,18 @@
+import sys
 import torch
+
 import torch.nn as nn
 import torch.nn.functional as F
-from copy import deepcopy
-from .conv_network import BaseEncoderDecoder
-from .conv_network import ConvBlock
 from .conv_network import ResBlock
-from .mpi import Alpha2Disp
-from .mpi import AlphaComposition
-from .mpi import ApplyAssociation
-from .mpi import ApplyHomography
-from .mpi import ComputeHomography
-from .semantic_embedding import SemanticEmbedding
+from .conv_network import ConvBlock
+from .conv_network import BaseEncoderDecoder
 
-from models.spade import ConvEncoder,SPADEGenerator
+from .semantic_embedding import SemanticEmbedding
+from .mpi import ComputeHomography
+from .mpi import AlphaComposition
+from .mpi import ApplyHomography
+from .mpi import Alpha2Disp
+from .mpi import ApplyAssociation
 
 class MulLayerConvNetwork(torch.nn.Module):
 
@@ -26,25 +26,25 @@ class MulLayerConvNetwork(torch.nn.Module):
         self.num_classes = opts.num_classes
         self.num_planes = num_planes
         self.out_seg_chans = self.opts.embedding_size
-
+        self.discriptor_net = BaseEncoderDecoder(input_channels)
+        self.base_res_layers = nn.Sequential(
+            *[ResBlock(enc_features, 3) for i in range(2)])
+        # we will re-use the input semantics
         total_seg_channels = (self.opts.num_layers - 1) * self.out_seg_chans
         total_alpha_channels = num_planes
         self.total_seg_channels = total_seg_channels
         self.total_alpha_channels = total_alpha_channels
         self.total_beta_channels = num_planes * self.opts.num_layers
         total_output_channels = total_seg_channels + \
-                                total_alpha_channels + self.total_beta_channels
-
-        self.discriptor_net = BaseEncoderDecoder(input_channels)
+            total_alpha_channels + self.total_beta_channels
         self.blending_alpha_seg_beta_pred = nn.Sequential(ResBlock(enc_features, 3),
                                                           ResBlock(
                                                               enc_features, 3),
-                                                          nn.BatchNorm2d(
+                                                          nn.SyncBatchNorm(
                                                               enc_features),
                                                           ConvBlock(
-                                                              enc_features, total_output_channels // 2, 3,
-                                                              down_sample=False),
-                                                          nn.BatchNorm2d(
+                                                              enc_features, total_output_channels // 2, 3, down_sample=False),
+                                                          nn.SyncBatchNorm(
                                                               total_output_channels // 2),
                                                           ConvBlock(total_output_channels // 2,
                                                                     total_output_channels, 3,
@@ -54,10 +54,11 @@ class MulLayerConvNetwork(torch.nn.Module):
     def forward(self, input_sem):
         b, _, h, w = input_sem.shape
         feats_0 = self.discriptor_net(input_sem)
-        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_0)
+        feats_1 = self.base_res_layers(feats_0)
+        alpha_and_seg_beta = self.blending_alpha_seg_beta_pred(feats_1)
         alphas = alpha_and_seg_beta[:, -self.total_alpha_channels:, :, :]
         seg = alpha_and_seg_beta[:, self.total_beta_channels:
-                                    self.total_beta_channels + self.total_seg_channels, :, :]
+                                 self.total_beta_channels + self.total_seg_channels, :, :]
         beta = alpha_and_seg_beta[:, :self.total_beta_channels, :, :]
         alpha = alphas.view(b, self.num_planes, 1, h, w)
         seg = seg.view(b, (self.opts.num_layers - 1), self.out_seg_chans, h, w)
@@ -83,41 +84,40 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-        self.encoder = ConvEncoder(opts)
-        spade_ltn_opts = deepcopy(opts)
-        spade_ltn_opts.__dict__[
-            'num_out_channels'] = opts.feats_per_layer
-        spade_ltn_opts.__dict__[
-            'semantic_nc'] = opts.num_layers * opts.embedding_size
-        spade_ltn_opts.__dict__[
-            'embedding_size'] = opts.num_layers * opts.embedding_size
-        spade_ltn_opts.__dict__[
-            'label_nc'] = opts.num_layers * opts.embedding_size
-        self.spade_ltn = SPADEGenerator(spade_ltn_opts, no_tanh=True)
+    def forward(self, input_data, mode='inference'):
+        if mode == 'inference':
+            with torch.no_grad():
+                seg_mul_layer, alpha, associations = self._infere_scene_repr(input_data)
+                semantics_nv = self._render_nv_semantics(
+                    input_data, seg_mul_layer, alpha, associations)
+                t_vec = input_data['t_vec']
+                disp_nv = self.alpha_to_disp(
+                    alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
 
-    def forward(self, input_data, style_img, d_loss = False):
-        output = self.encoder(style_img)
-        target_sem = input_data['target_seg']
-        seg_mul_layer, alpha, associations = self._infere_scene_repr(
-            input_data)
+                # Here we do novel-view synthesis of alpha features
+                t_vec, r_mat = input_data['t_vec'], input_data['r_mat']
+                # Compute planar homography
+                h_mats = self.compute_homography(
+                    kmats=input_data['k_matrix'], r_mats=r_mat, t_vecs=t_vec)
+                alpha_nv, grid = self.apply_homography(
+                    h_matrix=h_mats, src_img=alpha)
 
-        semantics_nv = self._render_nv_semantics(
-            input_data, seg_mul_layer, alpha, associations)
-        appearance_nv_feats = self.spade_ltn(semantics_nv, output['mu'])
-
-        semantics_loss = self.compute_semantics_loss(
-            semantics_nv, target_sem)
-        sun_loss = {'semantics_loss': semantics_loss}
-
-        t_vec = input_data['t_vec']
-        disp_nv = self.alpha_to_disp(
-            alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
-
-        if d_loss:
-            disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
-            sun_loss['disp_loss'] = self.opts.disparity_weight * disp_loss
-
-        return sun_loss, semantics_nv.data, disp_nv.data, alpha.data, appearance_nv_feats.data
+            return semantics_nv, alpha_nv, disp_nv
+        elif mode == 'training':
+            target_sem = input_data['target_seg']
+            seg_mul_layer, alpha, associations = self._infere_scene_repr(
+                input_data)
+            semantics_nv = self._render_nv_semantics(
+                input_data, seg_mul_layer, alpha, associations)
+            semantics_loss = self.compute_semantics_loss(
+                semantics_nv, target_sem)
+            if 'input_disp' in input_data.keys():
+                disp_iv = self.alpha_to_disp(
+                    alpha, input_data['k_matrix'], self.opts.stereo_baseline, novel_view=False)
+                disp_loss = F.l1_loss(disp_iv, input_data['input_disp'])
+            sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
+                        'semantics_loss': semantics_loss}
+            return sun_loss, semantics_nv.data, disp_iv.data
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
@@ -145,7 +145,6 @@ class SUNModel(torch.nn.Module):
             h_matrix=h_mats, src_img=mpi_sem, grid=None)
         mpi_alpha_nv, _ = self.apply_homography(
             h_matrix=h_mats, src_img=mpi_alpha, grid=grid)
-
         sem_nv = self.alpha_composition(
             src_imgs=mpi_sem_nv, alpha_imgs=mpi_alpha_nv)
         if not (self.opts.num_classes == self.opts.embedding_size):

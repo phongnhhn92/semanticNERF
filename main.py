@@ -1,7 +1,6 @@
 import os
 from collections import defaultdict
 
-import torchvision
 # pytorch-lightning
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -19,6 +18,7 @@ from metrics import *
 # models
 from models.nerf import *
 from models.rendering import *
+from models.style_model import StyleModel
 from models.sun_model import SUNModel
 from opt import get_opts
 # optimizer, scheduler, visualization
@@ -27,6 +27,7 @@ from utils import *
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
 _DEBUG = False
+
 
 class NeRFSystem(LightningModule):
     def __init__(self, hparams):
@@ -39,11 +40,18 @@ class NeRFSystem(LightningModule):
         self.embeddings = {'xyz': self.embedding_xyz,
                            'dir': self.embedding_dir}
 
-        # NERF model
-        self.nerf_model = NeRF(in_channels_style=self.hparams.feats_per_layer)
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        self.models = {'nerf': self.nerf_model, 'sun': self.SUN}
+        self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
+        self.SUN.eval()
+        # Original weight use SyncBatchNorm, replace them with Batchnorm
+        self.SUN = convert_model(self.SUN)
+
+        # NERF model
+        self.nerf_model = NeRF(in_channels_style=self.hparams.feats_per_layer)
+
+        # Style model
+        self.style = StyleModel(self.hparams)
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -51,14 +59,12 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data, training=True):
-        results = defaultdict(list)
-
-        # # Get style code from the style image
-        # style_code = self.encoder(data['style_img'])
-
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        loss_dict, semantics_nv, disp_nv, alpha_nv, appearance_nv \
-            = self.SUN(data, data['style_img'], d_loss=self.hparams.use_disparity_loss)
+        with torch.no_grad():
+            semantics_nv, alpha_nv, disp_nv = self.SUN(data)
+
+        # Get style code from the style image
+        kld_loss, appearance_nv = self.style(data['style_img'], semantics_nv)
 
         # Get one-hot encoded semantic maps of the novel view
         semantics_nv_one = torch.argmax(torch.softmax(semantics_nv, dim=1), dim=1).unsqueeze(1)
@@ -76,45 +82,68 @@ class NeRFSystem(LightningModule):
             chunk = self.hparams.chunk
         else:
             assert SB == 1, 'Wrong eval batch size !'
-            all_rgb_gt = data['target_rgb_gt'].squeeze(0)
-            all_rays = data['target_rays'].squeeze(0)
-            all_semantics = semantics_nv_one.squeeze(0)
-            all_appearance = appearance_nv.squeeze(0)
-            all_alphas = alpha_nv.squeeze(0)
+            all_rgb_gt = data['target_rgb_gt']
+            all_rays = data['target_rays']
+            all_semantics = semantics_nv_one
+            all_appearance = appearance_nv
+            all_alphas = alpha_nv
             chunk = self.hparams.chunk // 8
 
-        B = all_rays.shape[0]
-        # Conditional NERF MLP network
-        for i in range(0, B, chunk):
-            rendered_ray_chunks = \
-                render_rays(self.nerf_model,
-                            self.embeddings,
-                            all_rays[i:i + chunk],
-                            all_semantics[i:i + chunk],
-                            all_alphas[i:i + chunk],
-                            all_appearance[i:i + chunk],
-                            self.hparams.near_plane,
-                            self.hparams.far_plane,
-                            self.hparams.num_planes,
-                            self.hparams.N_importance,
-                            self.hparams.perturb,
-                            self.hparams.noise_std,
-                            self.hparams.chunk,  # chunk size is effective in val mode
-                            )
+        final_results = {}
+        for b in range(SB):
+            results = defaultdict(list)
+            R = all_rays[b].shape[0]
+            # Conditional NERF MLP network
+            for i in range(0, R, chunk):
+                rendered_ray_chunks = \
+                    render_rays(self.nerf_model,
+                                self.embeddings,
+                                all_rays[b][i:i + chunk],
+                                all_semantics[b][i:i + chunk],
+                                all_alphas[b][i:i + chunk],
+                                all_appearance[b][i:i + chunk],
+                                self.hparams.near_plane,
+                                self.hparams.far_plane,
+                                self.hparams.num_planes,
+                                self.hparams.N_importance,
+                                self.hparams.perturb,
+                                self.hparams.noise_std,
+                                self.hparams.chunk,  # chunk size is effective in val mode
+                                )
 
-            for k, v in rendered_ray_chunks.items():
-                results[k] += [v]
+                for k, v in rendered_ray_chunks.items():
+                    results[k] += [v]
 
-        for k, v in results.items():
-            results[k] = torch.cat(v, 0)
+            for k, v in results.items():
+                results[k] = torch.cat(v, 0)
 
-        loss_dict['rgb_loss'] = self.loss(results, all_rgb_gt)
-        results['semantic_nv'] = semantics_nv
-        results['disp_nv'] = disp_nv
-        results['loss_dict'] = loss_dict
-        psnr_ = psnr(results[f'rgb'], all_rgb_gt)
-        results['psnr'] = psnr_
-        return results
+            if b == 0:
+                for k, v in results.items():
+                    final_results[k] = results[k]
+            else:
+                for k, v in results.items():
+                    final_results[k] = torch.cat([final_results[k], results[k]], dim=0)
+        for k, v in final_results.items():
+            if training:
+                assert final_results[k].shape[0] == SB * self.hparams.num_rays, 'Error reshaping !'
+                final_results[k] = final_results[k].view(SB, self.hparams.num_rays, -1)
+            else:
+                final_results[k] = final_results[k].unsqueeze(0)
+
+        losses = {}
+        losses['rgb_loss'] = self.loss(final_results, all_rgb_gt)
+        if self.hparams.use_vae:
+            losses['kl_loss'] = kld_loss
+        final_results['loss_dict'] = losses
+
+        final_results['semantic_nv'] = semantics_nv
+
+        final_results['disp_nv'] = disp_nv
+
+        psnr_ = psnr(final_results[f'rgb'], all_rgb_gt)
+        final_results['psnr'] = psnr_
+
+        return final_results
 
     def setup(self, stage):
         dataset = dataset_dict[self.hparams.dataset_name]
@@ -127,7 +156,7 @@ class NeRFSystem(LightningModule):
         self.val_dataset = dataset(self.hparams, split='val')
 
     def configure_optimizers(self):
-        self.optimizer = get_optimizer(self.hparams, self.models)
+        self.optimizer = get_optimizer2(self.hparams, self.style, self.nerf_model)
         scheduler = get_scheduler(self.hparams, self.optimizer)
         return [self.optimizer], [scheduler]
 
@@ -143,11 +172,6 @@ class NeRFSystem(LightningModule):
         loss = sum([v for k, v in results['loss_dict'].items()])
 
         self.log('lr', get_learning_rate(self.optimizer))
-        self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
-        if self.hparams.use_disparity_loss:
-            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
-        self.log('train/semantic_loss', results['loss_dict']['semantics_loss'])
-
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
 
@@ -166,7 +190,7 @@ class NeRFSystem(LightningModule):
         log = {'val_loss': loss}
 
         save_semantic = SaveSemantics('carla')
-        if batch_nb == 0 and _DEBUG is not True:
+        if batch_nb == 0:
             W, H = self.hparams.img_wh
             input_img = batch['input_img'][0].cpu()
             input_img = input_img * 0.5 + 0.5
@@ -184,21 +208,20 @@ class NeRFSystem(LightningModule):
 
             stack = torch.stack([input_img, input_seg, target_img, target_seg])
 
-            pred_seg = torch.argmax(results['semantic_nv'], dim=1).cpu()
+            pred_seg = torch.argmax(results['semantic_nv'][0], dim=0).cpu()
             pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
             pred_seg = pred_seg / 255.0
 
-            pred_rgb = results['rgb'].permute(1, 0).view(3, H, W).cpu()
-            pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
-            pred_depth = visualize_depth(results['depth'].view(H, W).cpu())
+            pred_rgb = results['rgb'][0].permute(1, 0).view(3, H, W).cpu()
+            pred_disp = save_depth(results['disp_nv'][0].squeeze().cpu())
+            pred_depth = visualize_depth(results['depth'][0].view(H, W).cpu())
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
 
-
             self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
-                                                  stack, self.global_step)
+                                              stack, self.global_step)
             self.logger.experiment.add_images('val/predictions',
-                                                  stack_pred, self.global_step)
+                                              stack_pred, self.global_step)
 
         log['val_psnr'] = results['psnr']
 
@@ -223,7 +246,7 @@ def main(hparams):
 
     logger = TestTubeLogger(save_dir=hparams.log_dir,
                             name=hparams.exp_name,
-                            debug=_DEBUG,
+                            debug=False,
                             create_git_tag=False,
                             log_graph=False)
 
@@ -231,9 +254,8 @@ def main(hparams):
                       callbacks=[checkpoint_callback],
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
-                      weights_summary=None,
                       progress_bar_refresh_rate=1000 if hparams.num_gpus > 1 else 1,
-                      num_nodes = 1,
+                      num_nodes=1,
                       gpus=hparams.num_gpus,
                       accelerator='ddp' if hparams.num_gpus > 1 else None,
                       sync_batchnorm=True if hparams.num_gpus > 1 else False,

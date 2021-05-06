@@ -23,7 +23,6 @@ def get_parameters(models):
 
 def get_optimizer(hparams, models):
     eps = 1e-8
-    # TODO: different learning rate for 2 networks
     parameters = get_parameters(models)
     if hparams.optimizer == 'sgd':
         optimizer = SGD(parameters, lr=hparams.lr, 
@@ -36,6 +35,29 @@ def get_optimizer(hparams, models):
                                 weight_decay=hparams.weight_decay)
     elif hparams.optimizer == 'ranger':
         optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps, 
+                                 weight_decay=hparams.weight_decay)
+    else:
+        raise ValueError('optimizer not recognized!')
+
+    return optimizer
+
+def get_optimizer2(hparams, feature_models, nerf_model):
+    eps = 1e-8
+    parameters = get_parameters(feature_models)
+    if hparams.optimizer == 'sgd':
+        optimizer = SGD(parameters, lr=hparams.lr,
+                        momentum=hparams.momentum, weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'adam':
+        optimizer = Adam([
+                {'params': parameters},
+                {'params': nerf_model.parameters(), 'lr': hparams.lr}
+            ], lr=2*hparams.lr, eps=eps,
+            weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'radam':
+        optimizer = optim.RAdam(parameters, lr=hparams.lr, eps=eps,
+                                weight_decay=hparams.weight_decay)
+    elif hparams.optimizer == 'ranger':
+        optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps,
                                  weight_decay=hparams.weight_decay)
     else:
         raise ValueError('optimizer not recognized!')
@@ -89,3 +111,24 @@ def load_ckpt(model, ckpt_path, model_name='model', prefixes_to_ignore=[]):
     checkpoint_ = extract_model_state_dict(ckpt_path, model_name, prefixes_to_ignore)
     model_dict.update(checkpoint_)
     model.load_state_dict(model_dict)
+
+def convert_model(module):
+
+    """Traverse the input module and its child recursively
+       and replace all instance of torch.nn.SynchBatchNorm, to torch.nn.BatchNorm2d
+    Borrowed from https://github.com/vacancy/Synchronized-BatchNorm-PyTorch/blob/master/sync_batchnorm/batchnorm.py
+    and modified
+    """
+    mod = module
+    if isinstance(module, (torch.nn.SyncBatchNorm, )):
+        mod = torch.nn.BatchNorm2d(module.num_features, module.eps,
+                             module.momentum, module.affine)
+        mod.running_mean = module.running_mean
+        mod.running_var = module.running_var
+        if module.affine:
+            mod.weight.data = module.weight.data.clone().detach()
+            mod.bias.data = module.bias.data.clone().detach()
+
+    for name, child in module.named_children():
+        mod.add_module(name, convert_model(child))
+    return mod

@@ -56,6 +56,8 @@ def get_opts():
     parser.add_argument('--num_gpus', type=int, default=1,
                         help='number of gpus')
 
+    parser.add_argument('--SUN_path', type=str, default='/media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/SUN.pt',
+                        help='pretrained SUN model')
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
     parser.add_argument('--prefixes_to_ignore', nargs='+', type=str, default=['loss'],
@@ -126,7 +128,7 @@ def get_opts():
                             help='instance normalization or batch normalization')
     parser.add_argument('--norm_E', type=str, default='spectralinstance',
                             help='instance normalization or batch normalization')
-    parser.add_argument('--rgb_loss_coef', type=int, default=1,
+    parser.add_argument('--rgb_loss_coef', type=int, default=10.,
                         help='Coefficient of the rgb loss')
 
     return parser.parse_args()
