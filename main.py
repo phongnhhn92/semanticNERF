@@ -77,14 +77,13 @@ class NeRFSystem(LightningModule):
         appearance_nv = appearance_nv.view(SB, F, -1).permute(0, 2, 1)
 
         if training:
-            all_rgb_gt, all_rays, all_semantics, all_alphas, all_appearance \
-                = getRandomRays(self.hparams, data, semantics_nv_one, alpha_nv, appearance_nv, F)
+            all_rgb_gt, all_rays, all_alphas, all_appearance \
+                = getRandomRays(self.hparams, data, alpha_nv, appearance_nv, F)
             chunk = self.hparams.chunk
         else:
             assert SB == 1, 'Wrong eval batch size !'
             all_rgb_gt = data['target_rgb_gt']
             all_rays = data['target_rays']
-            all_semantics = semantics_nv_one
             all_appearance = appearance_nv
             all_alphas = alpha_nv
             chunk = self.hparams.chunk // 8
@@ -99,7 +98,6 @@ class NeRFSystem(LightningModule):
                     render_rays(self.nerf_model,
                                 self.embeddings,
                                 all_rays[b][i:i + chunk],
-                                all_semantics[b][i:i + chunk],
                                 all_alphas[b][i:i + chunk],
                                 all_appearance[b][i:i + chunk],
                                 self.hparams.near_plane,
