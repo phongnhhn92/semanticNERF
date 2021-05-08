@@ -72,7 +72,7 @@ class NeRF(nn.Module):
         # xyz encoding layers
         for i in range(D):
             if i == 0:
-                layer = nn.Linear(in_channels_xyz, W)
+                layer = nn.Linear(W+in_channels_xyz, W)
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
             else:
@@ -125,7 +125,7 @@ class NeRF(nn.Module):
         xyz_ = input_xyz
         for i in range(self.D):
             if i == 0:
-                xyz_ = torch.cat([xyz_],dim=-1)
+                xyz_ = torch.cat([xyz_,style_],dim=-1)
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)

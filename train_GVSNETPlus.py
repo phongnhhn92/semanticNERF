@@ -46,6 +46,10 @@ class NeRFSystem(LightningModule):
         self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature)
         # SUN model
         self.SUN = SUNModel(self.hparams)
+        self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
+        self.SUN.eval()
+        # Original weight use SyncBatchNorm, replace them with Batchnorm
+        self.SUN = convert_model(self.SUN)
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='resnet18' if _DEBUG else 'resnet50',
                             pretrained=True,
@@ -53,7 +57,7 @@ class NeRFSystem(LightningModule):
                             classes=self.hparams.appearance_feature,
                             parametric_upsampling=False)
         self.spade = SPADEResnetBlock(self.hparams.appearance_feature, self.hparams.appearance_feature, self.hparams)
-        self.feature_models = {'sun': self.SUN, 'encoder': self.encoder, 'spade': self.spade}
+        self.feature_models = {'encoder': self.encoder, 'spade': self.spade}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -62,7 +66,7 @@ class NeRFSystem(LightningModule):
 
     def forward(self, data, training=False):
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        loss_dict, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+        semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
             = self.SUN(data, d_loss=self.hparams.use_disparity_loss, mode='training')
 
         # Encoder
@@ -131,10 +135,11 @@ class NeRFSystem(LightningModule):
             else:
                 final_results[k] = final_results[k].unsqueeze(0)
 
-        loss_dict['rgb_loss'] = self.loss(final_results, all_rgb_gt)
+        loss = {}
+        loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
-        final_results['loss_dict'] = loss_dict
+        final_results['loss_dict'] = loss
         psnr_ = psnr(final_results[f'rgb'], all_rgb_gt)
         final_results['psnr'] = psnr_
         return final_results
@@ -165,10 +170,6 @@ class NeRFSystem(LightningModule):
         loss = sum(
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
-        if self.hparams.use_disparity_loss:
-            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
-        self.log('train/semantic_loss', results['loss_dict']['semantics_loss'])
-
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss

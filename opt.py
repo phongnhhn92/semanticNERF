@@ -59,8 +59,9 @@ def get_opts():
     parser.add_argument('--num_gpus', type=int, default=1,
                         help='number of gpus')
 
-    parser.add_argument('--SUN_path', type=str, default=None,
-                        help='pretrained SUN_model to load')
+    parser.add_argument('--SUN_path', type=str,
+                        default='/media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/SUN.pt',
+                        help='pretrained SUN model')
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
     parser.add_argument('--prefixes_to_ignore', nargs='+', type=str, default=['loss'],
