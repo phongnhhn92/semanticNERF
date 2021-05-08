@@ -5,6 +5,8 @@
 #### 18-04-2021:
 Starting point: Finish training code with simple style encoder (no VAE). Based on the predicted alphas of SUN model to 
 sample more dense points. The MLP model is conditioned on (1) semantic class of that ray, (2) style encoded feature F of the entire style image.  
+#### 08-05-2021:
+Misalignment between style image and reference view. 
 
 ![](/images/GVS_NERF.jpg "Ideas")
 
