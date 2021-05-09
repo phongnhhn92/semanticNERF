@@ -59,8 +59,7 @@ class NeRFSystem(LightningModule):
                             encoder_freeze=True,
                             out_channels=self.hparams.appearance_feature,
                             parametric_upsampling=False)
-        self.spade = SPADEResnetBlock(self.hparams.appearance_feature, self.hparams.appearance_feature, self.hparams)
-        self.feature_models = {'encoder': self.encoder, 'spade': self.spade}
+        self.feature_models = {'encoder': self.encoder}
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
