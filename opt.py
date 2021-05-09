@@ -102,7 +102,7 @@ def get_opts():
                         help='experiment name')
 
     parser.add_argument('--feats_per_layer', type=int, default=20)
-    parser.add_argument('--appearance_feature', type=int, default=16)
+    parser.add_argument('--appearance_feature', type=int, default=64)
     parser.add_argument('--num_upsampling_layers',
                             choices=('normal', 'more', 'most'), default='normal',
                             help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")

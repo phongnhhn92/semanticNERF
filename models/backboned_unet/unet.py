@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision import models, datasets, transforms
 from torch.nn import functional as F
-
+from models.spade.architecture import SPADEResnetBlock
 
 def get_backbone(name, pretrained=True):
 
@@ -125,7 +125,7 @@ class Unet(nn.Module):
                  backbone_name='resnet50',
                  pretrained=True,
                  encoder_freeze=False,
-                 classes=21,
+                 out_channels=21,
                  decoder_filters=(256, 128, 64, 32, 16),
                  parametric_upsampling=True,
                  shortcut_features='default',
@@ -141,6 +141,7 @@ class Unet(nn.Module):
 
         # build decoder part
         self.upsample_blocks = nn.ModuleList()
+        self.spade_blocks = nn.ModuleList()
         decoder_filters = decoder_filters[:len(self.shortcut_features)]  # avoiding having more blocks than skip connections
         decoder_filters_in = [bb_out_chs] + list(decoder_filters[:-1])
         num_blocks = len(self.shortcut_features)
@@ -150,8 +151,10 @@ class Unet(nn.Module):
                                                       skip_in=shortcut_chs[num_blocks-i-1],
                                                       parametric=parametric_upsampling,
                                                       use_bn=decoder_use_batchnorm))
+            self.spade_blocks.append(SPADEResnetBlock(filters_out, filters_out,
+                                          opts))
 
-        self.final_conv = nn.Conv2d(decoder_filters[-1], classes, kernel_size=(1, 1))
+        self.final_conv = nn.Conv2d(decoder_filters[-1], out_channels, kernel_size=(1, 1))
 
 
         if encoder_freeze:
@@ -166,14 +169,16 @@ class Unet(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = False
 
-    def forward(self, *input):
+    def forward(self, input, layered_sem):
 
         """ Forward propagation in U-Net. """
 
-        x, features = self.forward_backbone(*input)
-        for skip_name, upsample_block in zip(self.shortcut_features[::-1], self.upsample_blocks):
+        x, features = self.forward_backbone(input)
+        for skip_name, upsample_block,spade_block \
+                in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
             skip_features = features[skip_name]
             x = upsample_block(x, skip_features)
+            x = spade_block(x, layered_sem)
 
         x = self.final_conv(x)
         x = F.leaky_relu(x)

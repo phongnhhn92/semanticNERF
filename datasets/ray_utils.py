@@ -114,14 +114,15 @@ def one_hot_encoding(labels, C):
 
     return target
 
-def getRandomRays(hparams, data, alpha_nv, style_code, feat_channel = 20):
+def getRandomRays(hparams, data, alpha_nv, style_code, semantics_mpi, feat_channel = 20):
     all_rgb_gt = []
     all_rays = []
     all_alphas = []
     all_styles = []
-    SB, _, H, W = data['input_seg'].shape
-    for target_rays, target_rays_gt, alpha_nv_b, style_code_b \
-            in zip(data['target_rays'], data['target_rgb_gt'], alpha_nv, style_code):
+    all_semantics = []
+    SB, S, H, W = data['input_seg'].shape
+    for target_rays, target_rays_gt, alpha_nv_b, style_code_b, semantics_mpi_b \
+            in zip(data['target_rays'], data['target_rgb_gt'], alpha_nv, style_code, semantics_mpi):
         # Conver rgb values from 0 to 1
         target_rays_gt = target_rays_gt * 0.5 + 0.5
 
@@ -131,16 +132,18 @@ def getRandomRays(hparams, data, alpha_nv, style_code, feat_channel = 20):
         rays_gt = target_rays_gt[pix_inds]
         rays_alphas = alpha_nv_b[pix_inds]
         rays_style_code = style_code_b[pix_inds]
+        rays_semantic = semantics_mpi_b[pix_inds]
 
         all_rgb_gt.append(rays_gt.unsqueeze(0))
         all_rays.append(rays.unsqueeze(0))
         all_alphas.append(rays_alphas.unsqueeze(0))
         all_styles.append(rays_style_code.unsqueeze(0))
-
+        all_semantics.append(rays_semantic.unsqueeze(0))
 
     all_rgb_gt = torch.stack(all_rgb_gt).view(SB, hparams.num_rays, 3)  # (SB * num_rays, 3)
     all_rays = torch.stack(all_rays).view(SB, hparams.num_rays, 6)  # (SB * num_rays, 6)
     all_alphas = torch.stack(all_alphas).view(SB, hparams.num_rays, hparams.num_planes)
     all_styles = torch.stack(all_styles).view(SB, hparams.num_rays, hparams.num_planes, feat_channel)
+    all_semantics = torch.stack(all_semantics).view(SB, hparams.num_rays, hparams.num_planes, S)
 
-    return all_rgb_gt, all_rays, all_alphas, all_styles
+    return all_rgb_gt, all_rays, all_alphas, all_styles, all_semantics

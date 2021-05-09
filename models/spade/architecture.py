@@ -24,7 +24,7 @@ class SPADEResnetBlock(nn.Module):
         # Attributes
         self.learned_shortcut = (fin != fout)
         fmiddle = min(fin, fout)
-        additional_sem_chans = 1 if opts.use_instance_mask else 0
+        #additional_sem_chans = 1 if opts.use_instance_mask else 0
         # create conv layers
         self.conv_0 = nn.Conv2d(fin, fmiddle, kernel_size=3, padding=1)
         self.conv_1 = nn.Conv2d(fmiddle, fout, kernel_size=3, padding=1)
@@ -39,10 +39,11 @@ class SPADEResnetBlock(nn.Module):
         #     self.conv_s = spectral_norm(self.conv_s)
         # print(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
         # exit()
-        self.norm_0 = SPADE(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
-        self.norm_1 = SPADE(opts.spade_k_size, fmiddle, opts.embedding_size+additional_sem_chans)
+        sem_channels = opts.num_layers * opts.embedding_size
+        self.norm_0 = SPADE(opts.spade_k_size, fin, sem_channels)
+        self.norm_1 = SPADE(opts.spade_k_size, fmiddle, sem_channels)
         if self.learned_shortcut:
-            self.norm_s = SPADE(opts.spade_k_size, fin, opts.embedding_size+additional_sem_chans)
+            self.norm_s = SPADE(opts.spade_k_size, fin, sem_channels)
 
     def forward(self, x, seg):
         x_s = self.shortcut(x, seg)

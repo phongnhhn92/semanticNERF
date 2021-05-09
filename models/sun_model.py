@@ -92,14 +92,14 @@ class SUNModel(torch.nn.Module):
             seg_mul_layer, alpha, associations = self._infere_scene_repr(
                 input_data)
 
-            semantics_nv, mpi_semantics_nv, mpi_alpha_nv = self._render_nv_semantics(
+            semantics_nv, mpi_semantics_nv, mpi_alpha_nv, grid = self._render_nv_semantics(
                 input_data, seg_mul_layer, alpha, associations)
 
             t_vec = input_data['t_vec']
             disp_nv = self.alpha_to_disp(
                 alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
 
-            return semantics_nv.data,mpi_semantics_nv.data, disp_nv.data, mpi_alpha_nv.data
+            return seg_mul_layer, grid, associations, semantics_nv.data,mpi_semantics_nv.data, disp_nv.data, mpi_alpha_nv.data
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)
@@ -127,12 +127,11 @@ class SUNModel(torch.nn.Module):
             h_matrix=h_mats, src_img=mpi_sem, grid=None)
         mpi_alpha_nv, _ = self.apply_homography(
             h_matrix=h_mats, src_img=mpi_alpha, grid=grid)
-
         sem_nv = self.alpha_composition(
             src_imgs=mpi_sem_nv, alpha_imgs=mpi_alpha_nv)
         if not (self.opts.num_classes == self.opts.embedding_size):
             sem_nv = self.semantic_embedding.decode(sem_nv)
-        return sem_nv, mpi_sem_nv, mpi_alpha_nv
+        return sem_nv, mpi_sem_nv, mpi_alpha_nv, grid
 
     def compute_semantics_loss(self, pred_semantics, target_semantics):
         _, target_seg = target_semantics.max(dim=1)

@@ -18,6 +18,7 @@ from losses import loss_dict
 from metrics import *
 from models.backboned_unet.unet import Unet
 # models
+from models.mpi import ApplyAssociation, ComputeHomography, ApplyHomography
 from models.nerf import *
 from models.rendering import *
 from models.spade.architecture import SPADEResnetBlock
@@ -41,9 +42,11 @@ class NeRFSystem(LightningModule):
         self.embedding_dir = Embedding(3, 4)
         self.embeddings = {'xyz': self.embedding_xyz,
                            'dir': self.embedding_dir}
-
+        self.apply_association = ApplyAssociation(self.hparams.num_layers)
+        self.compute_homography = ComputeHomography(self.hparams)
+        self.apply_homography = ApplyHomography()
         # NERF model
-        self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature)
+        self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
         # SUN model
         self.SUN = SUNModel(self.hparams)
         self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
@@ -51,10 +54,10 @@ class NeRFSystem(LightningModule):
         # Original weight use SyncBatchNorm, replace them with Batchnorm
         self.SUN = convert_model(self.SUN)
         # Encoder
-        self.encoder = Unet(self.hparams, backbone_name='resnet18' if _DEBUG else 'resnet50',
+        self.encoder = Unet(self.hparams, backbone_name='resnet18',
                             pretrained=True,
                             encoder_freeze=True,
-                            classes=self.hparams.appearance_feature,
+                            out_channels=self.hparams.appearance_feature,
                             parametric_upsampling=False)
         self.spade = SPADEResnetBlock(self.hparams.appearance_feature, self.hparams.appearance_feature, self.hparams)
         self.feature_models = {'encoder': self.encoder, 'spade': self.spade}
@@ -66,36 +69,45 @@ class NeRFSystem(LightningModule):
 
     def forward(self, data, training=False):
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
-            = self.SUN(data, d_loss=self.hparams.use_disparity_loss, mode='training')
+        with torch.no_grad():
+            seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+                = self.SUN(data, d_loss=self.hparams.use_disparity_loss, mode='training')
+        seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
         # Encoder
-        out = self.encoder(data['style_img'])
+        layered_appearance = self.encoder(data['style_img'],seg_mul_layer)
+        mpi_appearance = self.apply_association(
+            layered_appearance, input_associations=associations)
 
-        # Spade block
-        feature_list = []
-        for i in range(self.hparams.num_planes):
-            f = self.spade(out, mpi_semantics_nv[:, i])
-            feature_list.append(f)
-        feature_list = torch.stack(feature_list, dim=1)
+        # Here we do novel-view synthesis of apearance features
+        t_vec, r_mat = data['t_vec'], data['r_mat']
+        # Compute planar homography
+        h_mats = self.compute_homography(
+            kmats=data['k_matrix'], r_mats=r_mat, t_vecs=t_vec)
+        mpi_appearance_nv, _ = self.apply_homography(
+            h_matrix=h_mats, src_img=mpi_appearance, grid=grid)
 
-        SB, D, F, H, W = feature_list.shape
-        appearance_nv = rearrange(feature_list, 'b d f h w -> b (h w) d f')
+        SB, D, F, H, W = mpi_appearance_nv.shape
+        mpi_appearance_nv = rearrange(mpi_appearance_nv, 'b d f h w -> b (h w) d f')
+        mpi_semantics_nv = rearrange(mpi_semantics_nv, 'b d f h w -> b (h w) d f')
         mpi_alpha_nv = rearrange(mpi_alpha_nv.squeeze(2), 'b d h w -> b (h w) d')
 
         if training:
-            all_rgb_gt, all_rays, all_alphas, all_appearance \
-                = getRandomRays(self.hparams, data, mpi_alpha_nv, appearance_nv, F)
+            all_rgb_gt, all_rays, all_alphas, all_appearance, all_semantic \
+                = getRandomRays(self.hparams, data, mpi_alpha_nv, mpi_appearance_nv, mpi_semantics_nv, F)
             chunk = self.hparams.chunk
         else:
             assert SB == 1, 'Wrong eval batch size !'
             all_rgb_gt = data['target_rgb_gt']
             all_rays = data['target_rays']
-            all_appearance = appearance_nv
+            all_appearance = mpi_appearance_nv
             all_alphas = mpi_alpha_nv
+            all_semantic = mpi_semantics_nv
             chunk = self.hparams.chunk // 8
 
         final_results = {}
+        #Concat feature and semantic maps
+        all_appearance = torch.cat([all_appearance,all_semantic],dim=-1)
         for b in range(SB):
             results = defaultdict(list)
             R = all_rays[b].shape[0]
