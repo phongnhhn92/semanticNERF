@@ -101,7 +101,6 @@ def get_opts():
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
 
-    parser.add_argument('--feats_per_layer', type=int, default=20)
     parser.add_argument('--appearance_feature', type=int, default=64)
     parser.add_argument('--num_upsampling_layers',
                             choices=('normal', 'more', 'most'), default='normal',

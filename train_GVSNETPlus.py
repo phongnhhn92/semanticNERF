@@ -57,7 +57,7 @@ class NeRFSystem(LightningModule):
         self.encoder = Unet(self.hparams, backbone_name='resnet18',
                             pretrained=True,
                             encoder_freeze=True,
-                            out_channels=self.hparams.appearance_feature,
+                            out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=False)
         self.feature_models = {'encoder': self.encoder}
 
@@ -74,7 +74,10 @@ class NeRFSystem(LightningModule):
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
         # Encoder
+        B,S,H,W = data['input_seg'].shape
         layered_appearance = self.encoder(data['style_img'],seg_mul_layer)
+        layered_appearance = layered_appearance.view(
+                B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
         mpi_appearance = self.apply_association(
             layered_appearance, input_associations=associations)
 
