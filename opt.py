@@ -78,7 +78,7 @@ def get_opts():
                         help='learning rate momentum')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay')
-    parser.add_argument('--lr_scheduler', type=str, default='steplr',
+    parser.add_argument('--lr_scheduler', type=str, default='cosine',
                         help='scheduler type',
                         choices=['steplr', 'cosine', 'poly'])
     #### params for warmup, only applied when optimizer == 'sgd' or 'adam'

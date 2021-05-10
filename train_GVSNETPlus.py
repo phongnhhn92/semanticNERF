@@ -10,18 +10,17 @@ from torch.utils.data import DataLoader
 
 # datasets
 from datasets import dataset_dict
-from datasets.carla_utils.utils import SaveSemantics
 from datasets.ray_utils import getRandomRays
 # losses
 from losses import loss_dict
 # metrics
 from metrics import *
+from models.alpha_MLP import Alpha_MLP
 from models.backboned_unet.unet import Unet
 # models
 from models.mpi import ApplyAssociation, ComputeHomography, ApplyHomography
 from models.nerf import *
 from models.rendering import *
-from models.spade.architecture import SPADEResnetBlock
 from models.sun_model import SUNModel
 from opt import get_opts
 # optimizer, scheduler, visualization
@@ -29,7 +28,7 @@ from utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = False
+_DEBUG = True
 
 
 class NeRFSystem(LightningModule):
@@ -59,6 +58,10 @@ class NeRFSystem(LightningModule):
                             encoder_freeze=True,
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=False)
+        # Alpha MLP
+        self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
+                               out_channels=self.hparams.num_planes * (
+                                           self.hparams.num_planes + self.hparams.N_importance))
         self.feature_models = {'encoder': self.encoder}
 
     def get_progress_bar_dict(self):
@@ -74,10 +77,10 @@ class NeRFSystem(LightningModule):
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
         # Encoder
-        B,S,H,W = data['input_seg'].shape
-        layered_appearance = self.encoder(data['style_img'],seg_mul_layer)
+        B, S, H, W = data['input_seg'].shape
+        layered_appearance = self.encoder(data['style_img'], seg_mul_layer)
         layered_appearance = layered_appearance.view(
-                B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
+            B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
         mpi_appearance = self.apply_association(
             layered_appearance, input_associations=associations)
 
@@ -108,8 +111,8 @@ class NeRFSystem(LightningModule):
             chunk = self.hparams.chunk // 8
 
         final_results = {}
-        #Concat feature and semantic maps
-        all_appearance = torch.cat([all_appearance,all_semantic],dim=-1)
+        # Concat feature and semantic maps
+        all_appearance = torch.cat([all_appearance, all_semantic], dim=-1)
         for b in range(SB):
             results = defaultdict(list)
             R = all_rays[b].shape[0]
@@ -188,60 +191,60 @@ class NeRFSystem(LightningModule):
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss
 
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset,
-                          shuffle=False,
-                          num_workers=0 if _DEBUG else 8,
-                          batch_size=1,  # validate one image (H*W rays) at a time
-                          pin_memory=True)
-
-    def validation_step(self, batch, batch_nb):
-        results = self(batch, training=False)
-        loss = sum([v for k, v in results['loss_dict'].items()])
-        log = {'val_loss': loss}
-
-        save_semantic = SaveSemantics('carla')
-        if batch_nb == 0:
-            W, H = self.hparams.img_wh
-            input_img = batch['input_img'][0].cpu()
-            input_img = input_img * 0.5 + 0.5
-
-            input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
-            input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
-            input_seg = input_seg / 255.0
-            # from torchvision.utils import save_image
-            # save_image(input_seg, 'img1.png')
-
-            target_img = batch['target_img'][0].cpu()
-            target_img = target_img * 0.5 + 0.5
-
-            target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
-            target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
-            target_seg = target_seg / 255.0
-
-            stack = torch.stack([input_img, input_seg, target_img, target_seg])
-
-            pred_seg = torch.argmax(results['semantic_nv'].squeeze(), dim=0).cpu()
-            pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
-            pred_seg = pred_seg / 255.0
-
-            pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
-            pred_depth = visualize_depth(results['depth'].squeeze().view(H, W).cpu())
-            pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
-
-            stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
-
-            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
-                                              stack, self.global_step)
-            self.logger.experiment.add_images('val/predictions',
-                                              stack_pred, self.global_step)
-
-        return log
-
-    def validation_epoch_end(self, outputs):
-        mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-
-        self.log('val/loss', mean_loss, prog_bar=True)
+    # def val_dataloader(self):
+    #     return DataLoader(self.val_dataset,
+    #                       shuffle=False,
+    #                       num_workers=0 if _DEBUG else 8,
+    #                       batch_size=1,  # validate one image (H*W rays) at a time
+    #                       pin_memory=True)
+    #
+    # def validation_step(self, batch, batch_nb):
+    #     results = self(batch, training=False)
+    #     loss = sum([v for k, v in results['loss_dict'].items()])
+    #     log = {'val_loss': loss}
+    #
+    #     save_semantic = SaveSemantics('carla')
+    #     if batch_nb == 0:
+    #         W, H = self.hparams.img_wh
+    #         input_img = batch['input_img'][0].cpu()
+    #         input_img = input_img * 0.5 + 0.5
+    #
+    #         input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
+    #         input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
+    #         input_seg = input_seg / 255.0
+    #         # from torchvision.utils import save_image
+    #         # save_image(input_seg, 'img1.png')
+    #
+    #         target_img = batch['target_img'][0].cpu()
+    #         target_img = target_img * 0.5 + 0.5
+    #
+    #         target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
+    #         target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
+    #         target_seg = target_seg / 255.0
+    #
+    #         stack = torch.stack([input_img, input_seg, target_img, target_seg])
+    #
+    #         pred_seg = torch.argmax(results['semantic_nv'].squeeze(), dim=0).cpu()
+    #         pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
+    #         pred_seg = pred_seg / 255.0
+    #
+    #         pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
+    #         pred_depth = visualize_depth(results['depth'].squeeze().view(H, W).cpu())
+    #         pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
+    #
+    #         stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
+    #
+    #         self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
+    #                                           stack, self.global_step)
+    #         self.logger.experiment.add_images('val/predictions',
+    #                                           stack_pred, self.global_step)
+    #
+    #     return log
+    #
+    # def validation_epoch_end(self, outputs):
+    #     mean_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+    #
+    #     self.log('val/loss', mean_loss, prog_bar=True)
 
 
 def main(hparams):
