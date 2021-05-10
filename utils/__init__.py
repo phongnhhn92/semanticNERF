@@ -21,23 +21,24 @@ def get_parameters(models):
         parameters += list(models.parameters())
     return parameters
 
-def get_optimizer2(hparams, feature_models, nerf_model):
+def get_optimizer2(hparams, feature_models, mlp_model):
     eps = 1e-8
-    parameters = get_parameters(feature_models)
+    feauture_parameters = get_parameters(feature_models)
+    mlp_parameters = get_parameters(mlp_model)
     if hparams.optimizer == 'sgd':
-        optimizer = SGD(parameters, lr=hparams.lr,
+        optimizer = SGD(feauture_parameters, lr=hparams.lr,
                         momentum=hparams.momentum, weight_decay=hparams.weight_decay)
     elif hparams.optimizer == 'adam':
         optimizer = Adam([
-                {'params': parameters},
-                {'params': nerf_model.parameters(), 'lr': hparams.lr}
+                {'params': feauture_parameters},
+                {'params': mlp_parameters, 'lr': hparams.lr}
             ], lr=2*hparams.lr, eps=eps,
             weight_decay=hparams.weight_decay)
     elif hparams.optimizer == 'radam':
-        optimizer = optim.RAdam(parameters, lr=hparams.lr, eps=eps,
+        optimizer = optim.RAdam(feauture_parameters, lr=hparams.lr, eps=eps,
                                 weight_decay=hparams.weight_decay)
     elif hparams.optimizer == 'ranger':
-        optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps,
+        optimizer = optim.Ranger(feauture_parameters, lr=hparams.lr, eps=eps,
                                  weight_decay=hparams.weight_decay)
     else:
         raise ValueError('optimizer not recognized!')

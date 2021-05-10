@@ -21,7 +21,8 @@ class Alpha_MLP(nn.Module):
                         nn.Linear(in_channels, W),
                         nn.ReLU(True),
                         nn.Linear(W, out_channels),
-                        nn.Sigmoid())
+                        nn.LeakyReLU(True))
 
     def forward(self, x):
-        return self.alpha(x)
+        out = self.alpha(x)
+        return out

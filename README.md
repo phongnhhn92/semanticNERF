@@ -15,6 +15,10 @@ sample more dense points. The MLP model is conditioned on (1) semantic class of 
 -Concat output of encoder (MPI appearance) with MPI semantic 
 -> input to NERF
 
+#### 10-05-2021:
+Predicted MPI alpha is feed to an AlphaMLP to sample a mapping from a coarse-to-dense appearance MPI
+-> Sample more points along the ray, rather than just 32 points of SUN network
+
 ![](/images/GVS_NERF.jpg "Ideas")
 
 #### Dataset:

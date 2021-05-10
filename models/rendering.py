@@ -1,6 +1,6 @@
 import torch
 from einops import rearrange, reduce, repeat
-
+from torch.nn import functional as F
 __all__ = ['render_rays']
 
 
@@ -133,10 +133,10 @@ def render_rays(models,
         # compute alpha by the formula (3)
         noise = torch.randn_like(sigmas_color) * noise_std
         # Relu
-        alphas = 1 - torch.exp(-deltas * torch.relu(sigmas_color + noise))  # (N_rays, N_samples_)
+        #alphas = 1 - torch.exp(-deltas * torch.relu(sigmas_color + noise))  # (N_rays, N_samples_)
 
         # softplus: f(x) = ln(1+e^x)
-        #alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas_color + noise))  # (N_rays, N_samples_)
+        alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas_color + noise))  # (N_rays, N_samples_)
 
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1 - alphas + 1e-10], -1)  # [1, 1-a1, 1-a2, ...]
@@ -187,12 +187,15 @@ def render_rays(models,
         z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
                                  N_importance, det=(perturb == 0))
 
-        z_vals_ = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
+        z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
         # combine coarse and fine samples
 
+    sampled_maps = models['alpha'](alphas).view(N_rays,z_vals.shape[-1],-1)
+    sampled_maps = F.softmax(sampled_maps,dim=-1)
+    sampled_styles = torch.mul(styles.unsqueeze(1), sampled_maps.unsqueeze(-1)).sum(dim=2)
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 
     results = {}
-    inference(results, models, xyz_fine, styles, z_vals)
+    inference(results, models['nerf'], xyz_fine, sampled_styles, z_vals)
 
     return results
