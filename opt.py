@@ -21,7 +21,7 @@ def get_opts():
     parser.add_argument('--num_planes', type=int, default=32)
     parser.add_argument('--num_rays', type=int, default=256,
                         help='Number of random rays in each novel views.')
-    parser.add_argument('--N_importance', type=int, default=128,
+    parser.add_argument('--N_importance', type=int, default=32,
                         help='number of additional fine samples')
     parser.add_argument('--mpi_encoder_features', type=int, default=96,
                             help='this controls number feature channels at the output of the base encoder-decoder network')
@@ -101,7 +101,7 @@ def get_opts():
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
 
-    parser.add_argument('--appearance_feature', type=int, default=64)
+    parser.add_argument('--appearance_feature', type=int, default=32)
     parser.add_argument('--num_upsampling_layers',
                             choices=('normal', 'more', 'most'), default='normal',
                             help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
