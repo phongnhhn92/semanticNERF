@@ -83,23 +83,26 @@ class SUNModel(torch.nn.Module):
             self.semantic_embedding = SemanticEmbedding(num_classes=opts.num_classes,
                                                         embedding_size=opts.embedding_size)
 
-    def forward(self, input_data, d_loss = False, mode='inference'):
-        if mode == 'inference':
-            with torch.no_grad():
-                scene_representation = self._infere_scene_repr(input_data)
-            return scene_representation
-        else:
-            seg_mul_layer, alpha, associations = self._infere_scene_repr(
+    def forward(self, input_data):
+        target_sem = input_data['target_seg']
+        seg_mul_layer, alpha, associations = self._infere_scene_repr(
                 input_data)
 
-            semantics_nv, mpi_semantics_nv, mpi_alpha_nv, grid = self._render_nv_semantics(
+        semantics_nv, mpi_semantics_nv, mpi_alpha_nv, grid = self._render_nv_semantics(
                 input_data, seg_mul_layer, alpha, associations)
 
-            t_vec = input_data['t_vec']
-            disp_nv = self.alpha_to_disp(
-                alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
+        semantics_loss = self.compute_semantics_loss(
+            semantics_nv, target_sem)
 
-            return seg_mul_layer, grid, associations, semantics_nv.data,mpi_semantics_nv.data, disp_nv.data, mpi_alpha_nv.data
+        t_vec = input_data['t_vec']
+        disp_nv = self.alpha_to_disp(
+                alpha, input_data['k_matrix'], self.opts.stereo_baseline, t_vec, novel_view=True)
+        disp_loss = F.l1_loss(disp_nv, input_data['target_disp'])
+        sun_loss = {'disp_loss': self.opts.disparity_weight * disp_loss,
+                    'semantics_loss': semantics_loss}
+
+        return sun_loss, seg_mul_layer, grid, associations, semantics_nv.data,mpi_semantics_nv.data, disp_nv.data, mpi_alpha_nv.data
+
 
     def _infere_scene_repr(self, input_data):
         # return self.conv_net(input_dict)

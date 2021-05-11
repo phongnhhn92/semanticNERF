@@ -45,26 +45,37 @@ class NeRFSystem(LightningModule):
         self.apply_association = ApplyAssociation(self.hparams.num_layers)
         self.compute_homography = ComputeHomography(self.hparams)
         self.apply_homography = ApplyHomography()
+
+        self.feature_models = {}
         # NERF model
         self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
+        # Alpha MLP
+        self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
+                               out_channels=self.hparams.num_planes * (
+                                       self.hparams.num_planes + self.hparams.N_importance))
+        self.mlp_model = {'nerf': self.nerf_model, 'alpha': self.alpha}
+
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
-        self.SUN.eval()
+        if self.hparams.SUN_path != '':
+            self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
+            self.SUN.eval()
+        else:
+            self.feature_models['sun'] = self.SUN
+
         # Original weight use SyncBatchNorm, replace them with Batchnorm
         self.SUN = convert_model(self.SUN)
+
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='resnet18',
                             pretrained=True,
                             encoder_freeze=True,
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=False)
-        # Alpha MLP
-        self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
-                               out_channels=self.hparams.num_planes * (
-                                           self.hparams.num_planes + self.hparams.N_importance))
-        self.feature_models = {'encoder': self.encoder}
-        self.mlp_model = {'nerf':self.nerf_model,'alpha':self.alpha}
+        self.feature_models['encoder'] = self.encoder
+        print('Init models !!!')
+
+
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -73,9 +84,13 @@ class NeRFSystem(LightningModule):
 
     def forward(self, data, training=False):
         # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        with torch.no_grad():
-            seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
-                = self.SUN(data, d_loss=self.hparams.use_disparity_loss, mode='training')
+        if self.hparams.SUN_path != '':
+            with torch.no_grad():
+                _, seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+                    = self.SUN(data)
+        else:
+            sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+                = self.SUN(data)
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
         # Encoder
@@ -156,6 +171,9 @@ class NeRFSystem(LightningModule):
 
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
+        if self.hparams.SUN_path == '':
+            loss['semantic_loss'] = sun_loss['semantics_loss']
+            loss['disp_loss'] = sun_loss['disp_loss']
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
         final_results['loss_dict'] = loss
@@ -189,6 +207,9 @@ class NeRFSystem(LightningModule):
         loss = sum(
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
+        if self.hparams.SUN_path == '':
+            self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
+            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss
