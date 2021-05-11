@@ -29,7 +29,7 @@ from utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = True
+_DEBUG = False
 
 
 class NeRFSystem(LightningModule):
