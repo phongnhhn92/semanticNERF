@@ -133,7 +133,7 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         self.backbone_name = backbone_name
-
+        self.opts = opts
         self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(backbone_name, pretrained=pretrained)
         shortcut_chs, bb_out_chs = self.infer_skip_channels()
         if shortcut_features != 'default':
@@ -155,7 +155,10 @@ class Unet(nn.Module):
                                           opts))
 
         self.final_conv = nn.Conv2d(decoder_filters[-1], out_channels, kernel_size=(1, 1))
-
+        if self.opts.use_vae:
+            self.fc_mu = nn.Linear(512 * 8 * 8, 256)
+            self.fc_var = nn.Linear(512 * 8 * 8, 256)
+            self.fc_z = nn.Linear(256, 512 * 8 * 8)
 
         if encoder_freeze:
             self.freeze_encoder()
@@ -169,11 +172,29 @@ class Unet(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = False
 
+    def reparameterize(self, mu, logvar, training = True):
+        if not training:
+            return mu
+        else:
+            std = torch.exp(0.5 * logvar)
+            eps = torch.randn_like(std)
+            return eps.mul(std) + mu
+
     def forward(self, input, layered_sem):
 
         """ Forward propagation in U-Net. """
-
+        output = {}
         x, features = self.forward_backbone(input)
+        original_shape = x.shape
+        x = x.view(x.size(0), -1)
+        if self.opts.use_vae:
+            mu = self.fc_mu(x)
+            logvar = self.fc_var(x)
+            z = self.reparameterize(mu, logvar)
+            x = self.fc_z(z).view(original_shape)
+            output['mu'] = mu
+            output['logvar'] = logvar
+
         for skip_name, upsample_block,spade_block \
                 in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
             skip_features = features[skip_name]
@@ -182,7 +203,8 @@ class Unet(nn.Module):
 
         x = self.final_conv(x)
         x = F.leaky_relu(x)
-        return x
+        output['out'] = x
+        return output
 
     def forward_backbone(self, x):
 

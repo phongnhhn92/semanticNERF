@@ -63,6 +63,7 @@ def get_opts():
                         default='',
                         help='pretrained SUN model')
     # /media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/SUN.pt
+    parser.add_argument('--lambda_kld', type=float, default=0.001)
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
     parser.add_argument('--prefixes_to_ignore', nargs='+', type=str, default=['loss'],

@@ -29,7 +29,7 @@ from utils import *
 
 # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
 seed_everything(100)
-_DEBUG = False
+_DEBUG = True
 
 
 class NeRFSystem(LightningModule):
@@ -37,6 +37,8 @@ class NeRFSystem(LightningModule):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
         self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
+        if self.hparams.use_vae:
+            self.KLloss = loss_dict['kl']()
 
         self.embedding_xyz = Embedding(3, 10)
         self.embedding_dir = Embedding(3, 4)
@@ -95,7 +97,8 @@ class NeRFSystem(LightningModule):
 
         # Encoder
         B, S, H, W = data['input_seg'].shape
-        layered_appearance = self.encoder(data['style_img'], seg_mul_layer)
+        style_dict = self.encoder(data['style_img'], seg_mul_layer)
+        layered_appearance = style_dict['out']
         layered_appearance = layered_appearance.view(
             B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
         mpi_appearance = self.apply_association(
@@ -174,9 +177,14 @@ class NeRFSystem(LightningModule):
         if self.hparams.SUN_path == '':
             loss['semantic_loss'] = sun_loss['semantics_loss']
             loss['disp_loss'] = sun_loss['disp_loss']
+
+        if self.hparams.use_vae:
+            loss['kl_loss'] = self.KLloss(style_dict['mu'], style_dict['logvar']) * self.hparams.lambda_kld
+
+        final_results['loss_dict'] = loss
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
-        final_results['loss_dict'] = loss
+
         psnr_ = psnr(final_results[f'rgb'], all_rgb_gt)
         final_results['psnr'] = psnr_
         return final_results
