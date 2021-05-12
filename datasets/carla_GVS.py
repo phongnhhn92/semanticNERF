@@ -121,9 +121,10 @@ class CarlaGVSDataset(Dataset):
         rays_o, rays_d = get_rays(directions, target_pose)
         cam_rays = torch.cat([rays_o, rays_d],1)
         rays_rgb = target_img.view(3,-1).permute(1,0)
-
+        target_seg = target_seg.view(13,-1).permute(1,0)
         data_dict['target_rays'] = cam_rays
         data_dict['target_rgb_gt'] = rays_rgb
+        data_dict['target_seg_gt'] = target_seg
 
         data_dict = {k: v.float()
                      for k, v in data_dict.items() if not (k is None)}

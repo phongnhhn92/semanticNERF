@@ -37,6 +37,7 @@ class NeRFSystem(LightningModule):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
         self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
+        self.sem_loss = loss_dict['semantic'](coef=self.hparams.rgb_loss_coef)
 
         self.embedding_xyz = Embedding(3, 10)
         self.embedding_dir = Embedding(3, 4)
@@ -48,7 +49,8 @@ class NeRFSystem(LightningModule):
 
         self.feature_models = {}
         # NERF model
-        self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
+        self.nerf_model = NeRF(in_channels_appearance=self.hparams.appearance_feature,
+                               in_channels_semantic = self.hparams.embedding_size)
         # Alpha MLP
         self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
                                out_channels=self.hparams.num_planes * (
@@ -57,14 +59,7 @@ class NeRFSystem(LightningModule):
 
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        if self.hparams.SUN_path != '':
-            self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
-            self.SUN.eval()
-        else:
-            self.feature_models['sun'] = self.SUN
-
-        # Original weight use SyncBatchNorm, replace them with Batchnorm
-        self.SUN = convert_model(self.SUN)
+        self.feature_models['sun'] = self.SUN
 
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='resnet18',
@@ -83,13 +78,8 @@ class NeRFSystem(LightningModule):
         return items
 
     def forward(self, data, training=False):
-        # Get the semantic ,disparity, alpha and appearance feature of the novel view
-        if self.hparams.SUN_path != '':
-            with torch.no_grad():
-                _, seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
-                    = self.SUN(data)
-        else:
-            sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+
+        sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
                 = self.SUN(data)
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
@@ -115,12 +105,14 @@ class NeRFSystem(LightningModule):
         mpi_alpha_nv = rearrange(mpi_alpha_nv.squeeze(2), 'b d h w -> b (h w) d')
 
         if training:
-            all_rgb_gt, all_rays, all_alphas, all_appearance, all_semantic \
+            all_rgb_gt, all_sem_gt, all_rays, all_alphas, all_appearance, all_semantic \
                 = getRandomRays(self.hparams, data, mpi_alpha_nv, mpi_appearance_nv, mpi_semantics_nv, F)
             chunk = self.hparams.chunk
         else:
             assert SB == 1, 'Wrong eval batch size !'
             all_rgb_gt = data['target_rgb_gt']
+            all_sem_gt = data['target_seg_gt']
+            _, all_sem_gt = all_sem_gt.max(dim=-1)
             all_rays = data['target_rays']
             all_appearance = mpi_appearance_nv
             all_alphas = mpi_alpha_nv
@@ -171,9 +163,10 @@ class NeRFSystem(LightningModule):
 
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
-        if self.hparams.SUN_path == '':
-            loss['semantic_loss'] = sun_loss['semantics_loss']
-            loss['disp_loss'] = sun_loss['disp_loss']
+        loss['sem_loss_nerf'] = self.sem_loss(final_results, all_sem_gt)
+        loss['semantic_loss'] = sun_loss['semantics_loss']
+        loss['disp_loss'] = sun_loss['disp_loss']
+
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
         final_results['loss_dict'] = loss
@@ -207,9 +200,9 @@ class NeRFSystem(LightningModule):
         loss = sum(
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
-        if self.hparams.SUN_path == '':
-            self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
-            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
+        self.log('train/semantic_nerf_loss', results['loss_dict']['sem_loss_nerf'])
+        self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
+        self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss
@@ -247,6 +240,11 @@ class NeRFSystem(LightningModule):
 
             stack = torch.stack([input_img, input_seg, target_img, target_seg])
 
+            pred_seg_nerf = results['semantic'].permute(0,2,1).view(-1,self.hparams.embedding_size,H,W)
+            pred_seg_nerf = torch.argmax(pred_seg_nerf.squeeze(), dim=0).cpu()
+            pred_seg_nerf = torch.from_numpy(save_semantic.to_color(pred_seg_nerf)).permute(2, 0, 1)
+            pred_seg_nerf = pred_seg_nerf / 255.0
+
             pred_seg = torch.argmax(results['semantic_nv'].squeeze(), dim=0).cpu()
             pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
             pred_seg = pred_seg / 255.0
@@ -255,7 +253,7 @@ class NeRFSystem(LightningModule):
             pred_depth = visualize_depth(results['depth'].squeeze().view(H, W).cpu())
             pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
 
-            stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
+            stack_pred = torch.stack([pred_rgb, pred_seg, pred_seg_nerf, pred_disp, pred_depth])
 
             self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
                                               stack, self.global_step)

@@ -42,8 +42,8 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27,
-                 in_channels_style=20,
-                 style_layers = 3,
+                 in_channels_appearance=32,
+                 in_channels_semantic=13,
                  skips=[4]):
         """
         D: number of layers for density (sigma) encoder
@@ -57,22 +57,17 @@ class NeRF(nn.Module):
         self.W = W
         self.in_channels_xyz = in_channels_xyz
         self.in_channels_dir = in_channels_dir
-        self.style_layers = style_layers
+        self.in_channels_appearance = in_channels_appearance
+        self.in_channels_semantic = in_channels_semantic
         self.skips = skips
 
-        # style encoding layer
-        for j in range(self.style_layers):
-            if j == 0:
-                layer = nn.Linear(in_channels_style, W)
-            else:
-                layer = nn.Linear(W, W)
-            layer = nn.Sequential(layer, nn.ReLU(True))
-            setattr(self, f"style_encoding_{j + 1}", layer)
+        self.layer_appearance = nn.Linear(in_channels_appearance, W)
+        self.layer_semantic = nn.Linear(in_channels_semantic, W)
 
         # xyz encoding layers
         for i in range(D):
             if i == 0:
-                layer = nn.Linear(W+in_channels_xyz, W)
+                layer = nn.Linear(in_channels_xyz, W)
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
             else:
@@ -80,22 +75,29 @@ class NeRF(nn.Module):
             layer = nn.Sequential(layer, nn.ReLU(True))
             setattr(self, f"xyz_encoding_{i+1}", layer)
 
-
         self.xyz_encoding_final = nn.Linear(W, W)
 
         # direction encoding layers
-        self.dir_encoding = nn.Sequential(
+        self.style_encoding = nn.Sequential(
+            nn.Linear(2 * W , W),
+            nn.ReLU(True),
+            nn.Linear(W, W // 2),
+            nn.ReLU(True),
+            nn.Linear(W // 2, in_channels_semantic),
+        )
+
+        # direction encoding layers
+        self.appearance_dir_encoding = nn.Sequential(
                                 nn.Linear(2*W+in_channels_dir, W),
                                 nn.ReLU(True),
                                 nn.Linear(W, W // 2),
                                 nn.ReLU(True),
+                                nn.Linear(W // 2, 3),
+                                nn.Sigmoid()
                             )
 
         # output layers
         self.sigma_color = nn.Linear(W, 1)
-        self.rgb = nn.Sequential(
-                        nn.Linear(W//2, 3),
-                        nn.Sigmoid())
 
     def forward(self, x, style):
         """
@@ -118,23 +120,28 @@ class NeRF(nn.Module):
         input_xyz, input_dir = \
                 torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
 
-        style_ = style
-        for i in range(self.style_layers):
-            style_ = getattr(self, f"style_encoding_{i + 1}")(style_)
+        style_appearance, style_semantic = \
+                torch.split(style,[self.in_channels_appearance, self.in_channels_semantic],dim=-1)
 
         xyz_ = input_xyz
         for i in range(self.D):
             if i == 0:
-                xyz_ = torch.cat([xyz_,style_],dim=-1)
+                xyz_ = torch.cat([xyz_],dim=-1)
             if i in self.skips:
                 xyz_ = torch.cat([input_xyz, xyz_], -1)
             xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
         sigma_color = self.sigma_color(xyz_)
         xyz_encoding_final = self.xyz_encoding_final(xyz_)
-        dir_encoding_input = torch.cat([xyz_encoding_final, input_dir, style_], -1)
-        dir_encoding = self.dir_encoding(dir_encoding_input)
-        rgb = self.rgb(dir_encoding)
-        out = torch.cat([rgb, sigma_color], -1)
+
+        style_semantic = self.layer_semantic(style_semantic)
+        semantic_encoding_input = torch.cat([xyz_encoding_final, style_semantic], -1)
+        semantic = self.style_encoding(semantic_encoding_input)
+
+        style_appearance = self.layer_appearance(style_appearance)
+        appearance_dir_encoding_input = torch.cat([xyz_encoding_final, input_dir, style_appearance], -1)
+        rgb = self.appearance_dir_encoding(appearance_dir_encoding_input)
+
+        out = torch.cat([rgb, semantic, sigma_color], -1)
 
         return out

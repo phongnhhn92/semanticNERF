@@ -116,34 +116,39 @@ def one_hot_encoding(labels, C):
 
 def getRandomRays(hparams, data, alpha_nv, style_code, semantics_mpi, feat_channel = 20):
     all_rgb_gt = []
+    all_sem_gt = []
     all_rays = []
     all_alphas = []
     all_styles = []
     all_semantics = []
     SB, S, H, W = data['input_seg'].shape
-    for target_rays, target_rays_gt, alpha_nv_b, style_code_b, semantics_mpi_b \
-            in zip(data['target_rays'], data['target_rgb_gt'], alpha_nv, style_code, semantics_mpi):
+    for target_rays, target_rays_gt, target_segs_gt, alpha_nv_b, style_code_b, semantics_mpi_b \
+            in zip(data['target_rays'], data['target_rgb_gt'], data['target_seg_gt'], alpha_nv, style_code, semantics_mpi):
         # Conver rgb values from 0 to 1
         target_rays_gt = target_rays_gt * 0.5 + 0.5
+        _, target_segs_gt = target_segs_gt.max(dim=-1)
 
         # Randomly sample a few rays in the target view.
         pix_inds = torch.randint(0, target_rays.shape[0], (hparams.num_rays,))
         rays = target_rays[pix_inds]
         rays_gt = target_rays_gt[pix_inds]
+        rays_seg_gt = target_segs_gt[pix_inds]
         rays_alphas = alpha_nv_b[pix_inds]
         rays_style_code = style_code_b[pix_inds]
         rays_semantic = semantics_mpi_b[pix_inds]
 
-        all_rgb_gt.append(rays_gt.unsqueeze(0))
-        all_rays.append(rays.unsqueeze(0))
-        all_alphas.append(rays_alphas.unsqueeze(0))
-        all_styles.append(rays_style_code.unsqueeze(0))
-        all_semantics.append(rays_semantic.unsqueeze(0))
+        all_rgb_gt.append(rays_gt)
+        all_sem_gt.append(rays_seg_gt)
+        all_rays.append(rays)
+        all_alphas.append(rays_alphas)
+        all_styles.append(rays_style_code)
+        all_semantics.append(rays_semantic)
 
     all_rgb_gt = torch.stack(all_rgb_gt).view(SB, hparams.num_rays, 3)  # (SB * num_rays, 3)
+    all_sem_gt = torch.stack(all_sem_gt).view(SB, hparams.num_rays)  # (SB * num_rays, 3)
     all_rays = torch.stack(all_rays).view(SB, hparams.num_rays, 6)  # (SB * num_rays, 6)
     all_alphas = torch.stack(all_alphas).view(SB, hparams.num_rays, hparams.num_planes)
     all_styles = torch.stack(all_styles).view(SB, hparams.num_rays, hparams.num_planes, feat_channel)
     all_semantics = torch.stack(all_semantics).view(SB, hparams.num_rays, hparams.num_planes, S)
 
-    return all_rgb_gt, all_rays, all_alphas, all_styles, all_semantics
+    return all_rgb_gt, all_sem_gt, all_rays, all_alphas, all_styles, all_semantics
