@@ -59,7 +59,11 @@ class NeRFSystem(LightningModule):
 
         # SUN model
         self.SUN = SUNModel(self.hparams)
-        self.feature_models['sun'] = self.SUN
+        if self.hparams.SUN_path != '':
+            self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
+            self.SUN.eval()
+        else:
+            self.feature_models['sun'] = self.SUN
 
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='resnet18',
@@ -70,17 +74,20 @@ class NeRFSystem(LightningModule):
         self.feature_models['encoder'] = self.encoder
         print('Init models !!!')
 
-
-
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
         items.pop("v_num", None)
         return items
 
     def forward(self, data, training=False):
-
-        sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+        if self.hparams.SUN_path == '':
+            sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
                 = self.SUN(data)
+        else:
+            with torch.no_grad():
+                _, seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+                    = self.SUN(data)
+
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
         # Encoder
@@ -164,8 +171,9 @@ class NeRFSystem(LightningModule):
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         loss['sem_loss_nerf'] = self.sem_loss(final_results, all_sem_gt)
-        loss['semantic_loss'] = sun_loss['semantics_loss']
-        loss['disp_loss'] = sun_loss['disp_loss']
+        if self.hparams.SUN_path == '':
+            loss['semantic_loss'] = sun_loss['semantics_loss']
+            loss['disp_loss'] = sun_loss['disp_loss']
 
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
@@ -201,8 +209,9 @@ class NeRFSystem(LightningModule):
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
         self.log('train/semantic_nerf_loss', results['loss_dict']['sem_loss_nerf'])
-        self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
-        self.log('train/disp_loss', results['loss_dict']['disp_loss'])
+        if self.hparams.SUN_path == '':
+            self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
+            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss
@@ -287,7 +296,7 @@ def main(hparams):
                       callbacks=[checkpoint_callback],
                       resume_from_checkpoint=hparams.ckpt_path,
                       logger=logger,
-                      weights_summary=None,
+                      weights_summary='top',
                       progress_bar_refresh_rate=1000 if hparams.num_gpus > 1 else 1,
                       num_nodes=1,
                       gpus=hparams.num_gpus,
