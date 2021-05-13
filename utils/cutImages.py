@@ -1,8 +1,8 @@
 from PIL import Image
 import numpy as np
 
-gt_img = '/home/phong/PycharmProjects/semanticNERF/images/GT_GVS_NERF.png'
-pred_img = '/home/phong/PycharmProjects/semanticNERF/images/GVS_NERF.png'
+gt_img = '/home/phong/GT.png'
+pred_img = '/home/phong/pred.png'
 
 def load_image( infilename ) :
     img = Image.open( infilename )
