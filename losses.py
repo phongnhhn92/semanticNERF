@@ -20,6 +20,7 @@ class DispLoss(nn.Module):
 
     def forward(self, inputs, target_disp, baseline = 0.54, fx = 128):
         disp = baseline * fx / inputs['depth']
+        disp = disp.view(target_disp.shape)
         loss = self.loss(disp, target_disp)
         return self.coef * loss
                
