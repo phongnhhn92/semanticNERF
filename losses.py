@@ -11,6 +11,17 @@ class ColorLoss(nn.Module):
     def forward(self, inputs, targetsRGB):
         loss = self.loss(inputs['rgb'], targetsRGB)
         return self.coef * loss
+
+class DispLoss(nn.Module):
+    def __init__(self, coef=1.0):
+        super().__init__()
+        self.coef = coef
+        self.loss = nn.SmoothL1Loss(reduction='mean')
+
+    def forward(self, inputs, target_disp, baseline = 0.54, fx = 128):
+        disp = baseline * fx / inputs['depth']
+        loss = self.loss(disp, target_disp)
+        return self.coef * loss
                
 class SemanticLoss(nn.Module):
     def __init__(self, coef=1.0):
@@ -26,4 +37,4 @@ class SemanticLoss(nn.Module):
         loss =  F.cross_entropy(pred, target, ignore_index=self.num_classes)
         return self.coef * loss
 
-loss_dict = {'color': ColorLoss, 'semantic': SemanticLoss}
+loss_dict = {'color': ColorLoss, 'semantic': SemanticLoss, 'disp': DispLoss}

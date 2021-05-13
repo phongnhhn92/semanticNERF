@@ -1,6 +1,7 @@
 import torch
 from einops import rearrange, reduce, repeat
 from torch.nn import functional as F
+
 __all__ = ['render_rays']
 
 
@@ -115,13 +116,13 @@ def render_rays(models,
         for i in range(0, B, chunk):
             xyz_embedded = embedding_xyz(xyz_[i:i + chunk])
             xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded_[i:i + chunk]], 1)
+                                         dir_embedded_[i:i + chunk]], 1)
             out_chunks += [model(xyzdir_embedded, style_[i:i + chunk])]
 
         out = torch.cat(out_chunks, 0)
         # out = out.view(N_rays, N_samples_, 4)
         out = rearrange(out, '(n1 n2) c -> n1 n2 c', n1=N_rays, n2=N_samples_, c=out.shape[-1])
-        rgbs, semantics, sigmas_color  = torch.split(out, [3, 13, 1], dim=-1)
+        rgbs, semantics, sigmas_color = torch.split(out, [3, 13, 1], dim=-1)
         sigmas_color = sigmas_color.squeeze(-1)
 
         # Convert these values using volume rendering (Section 4)
@@ -133,7 +134,7 @@ def render_rays(models,
         # compute alpha by the formula (3)
         noise = torch.randn_like(sigmas_color) * noise_std
         # Relu
-        #alphas = 1 - torch.exp(-deltas * torch.relu(sigmas_color + noise))  # (N_rays, N_samples_)
+        # alphas = 1 - torch.exp(-deltas * torch.relu(sigmas_color + noise))  # (N_rays, N_samples_)
 
         # softplus: f(x) = ln(1+e^x)
         alphas = 1 - torch.exp(-deltas * torch.nn.Softplus()(sigmas_color + noise))  # (N_rays, N_samples_)
@@ -142,7 +143,7 @@ def render_rays(models,
             torch.cat([torch.ones_like(alphas[:, :1]), 1 - alphas + 1e-10], -1)  # [1, 1-a1, 1-a2, ...]
         weights = \
             alphas * torch.cumprod(alphas_shifted[:, :-1], -1)  # (N_rays, N_samples_)
-        #weights_sum = reduce(weights, 'n1 n2 -> n1', 'sum')  # (N_rays)
+        # weights_sum = reduce(weights, 'n1 n2 -> n1', 'sum')  # (N_rays)
         # the accumulated opacity along the rays
         # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
 
@@ -172,8 +173,8 @@ def render_rays(models,
 
     # Sample depth points
     z_vals = 1 / torch.linspace(1 / near, 1 / far, N_planes)
-    z_vals = rearrange(z_vals,'n1 -> 1 n1').to(rays_o.device)
-    z_vals = repeat(z_vals,'1 n1 -> r n1', r = N_rays)
+    z_vals = rearrange(z_vals, 'n1 -> 1 n1').to(rays_o.device)
+    z_vals = repeat(z_vals, '1 n1 -> r n1', r=N_rays)
 
     if perturb > 0:  # perturb sampling depths (z_vals)
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
@@ -187,13 +188,13 @@ def render_rays(models,
     if N_importance > 0:
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
         z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
-                                 N_importance, det=(perturb == 0))
+                             N_importance, det=(perturb == 0))
 
         z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
         # combine coarse and fine samples
 
-    sampled_maps = models['alpha'](alphas).view(N_rays,z_vals.shape[-1],-1)
-    sampled_maps = F.softmax(sampled_maps,dim=-1)
+    sampled_maps = models['alpha'](alphas).view(N_rays, N_importance + N_planes, N_planes)
+    sampled_maps = F.softmax(sampled_maps, dim=-1)
     sampled_styles = torch.mul(styles.unsqueeze(1), sampled_maps.unsqueeze(-1)).sum(dim=2)
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
 

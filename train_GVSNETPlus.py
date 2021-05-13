@@ -37,7 +37,8 @@ class NeRFSystem(LightningModule):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
         self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
-        self.sem_loss = loss_dict['semantic'](coef=self.hparams.rgb_loss_coef)
+        self.sem_loss = loss_dict['semantic'](coef=1.0)
+        self.disp_loss = loss_dict['disp'](coef=0.1)
 
         self.embedding_xyz = Embedding(3, 10)
         self.embedding_dir = Embedding(3, 4)
@@ -62,6 +63,7 @@ class NeRFSystem(LightningModule):
         if self.hparams.SUN_path != '':
             self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
             self.SUN.eval()
+            self.SUN = convert_model(self.SUN)
         else:
             self.feature_models['sun'] = self.SUN
 
@@ -112,7 +114,7 @@ class NeRFSystem(LightningModule):
         mpi_alpha_nv = rearrange(mpi_alpha_nv.squeeze(2), 'b d h w -> b (h w) d')
 
         if training:
-            all_rgb_gt, all_sem_gt, all_rays, all_alphas, all_appearance, all_semantic \
+            all_rgb_gt, all_sem_gt, all_disp_gt, all_rays, all_alphas, all_appearance, all_semantic \
                 = getRandomRays(self.hparams, data, mpi_alpha_nv, mpi_appearance_nv, mpi_semantics_nv, F)
             chunk = self.hparams.chunk
         else:
@@ -120,6 +122,7 @@ class NeRFSystem(LightningModule):
             all_rgb_gt = data['target_rgb_gt']
             all_sem_gt = data['target_seg_gt']
             _, all_sem_gt = all_sem_gt.max(dim=-1)
+            all_disp_gt = data['target_disp_gt'].squeeze(-1)
             all_rays = data['target_rays']
             all_appearance = mpi_appearance_nv
             all_alphas = mpi_alpha_nv
@@ -171,9 +174,10 @@ class NeRFSystem(LightningModule):
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         loss['sem_loss_nerf'] = self.sem_loss(final_results, all_sem_gt)
-        if self.hparams.SUN_path == '':
-            loss['semantic_loss'] = sun_loss['semantics_loss']
-            loss['disp_loss'] = sun_loss['disp_loss']
+        loss['disp_loss'] = self.disp_loss(final_results, all_disp_gt)
+        # if self.hparams.SUN_path == '':
+        #     loss['semantic_loss'] = sun_loss['semantics_loss']
+        #     loss['disp_loss'] = sun_loss['disp_loss']
 
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
@@ -209,9 +213,10 @@ class NeRFSystem(LightningModule):
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
         self.log('train/semantic_nerf_loss', results['loss_dict']['sem_loss_nerf'])
-        if self.hparams.SUN_path == '':
-            self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
-            self.log('train/disp_loss', results['loss_dict']['disp_loss'])
+        self.log('train/semantic_nerf_loss', results['loss_dict']['disp_loss'])
+        # if self.hparams.SUN_path == '':
+        #     self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
+        #     self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
         return loss
