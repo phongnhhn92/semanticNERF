@@ -38,7 +38,7 @@ class NeRFSystem(LightningModule):
         self.hparams = hparams
         self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
         self.sem_loss = loss_dict['semantic'](coef=1.0)
-        self.disp_loss = loss_dict['disp'](coef=0.1)
+        #self.disp_loss = loss_dict['disp'](coef=0.1)
 
         self.embedding_xyz = Embedding(3, 10)
         self.embedding_dir = Embedding(3, 4)
@@ -174,7 +174,7 @@ class NeRFSystem(LightningModule):
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         loss['sem_loss_nerf'] = self.sem_loss(final_results, all_sem_gt)
-        loss['disp_loss'] = self.disp_loss(final_results, all_disp_gt)
+        #loss['disp_loss'] = self.disp_loss(final_results, all_disp_gt)
         if self.hparams.SUN_path == '':
             loss['semantic_loss'] = sun_loss['semantics_loss']
             loss['disp_loss'] = sun_loss['disp_loss']
@@ -213,7 +213,7 @@ class NeRFSystem(LightningModule):
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
         self.log('train/semantic_nerf_loss', results['loss_dict']['sem_loss_nerf'])
-        self.log('train/semantic_nerf_loss', results['loss_dict']['disp_loss'])
+        #self.log('train/semantic_nerf_loss', results['loss_dict']['disp_loss'])
         if self.hparams.SUN_path == '':
             self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
             self.log('train/disp_loss', results['loss_dict']['disp_loss'])
@@ -252,7 +252,7 @@ class NeRFSystem(LightningModule):
             target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
             target_seg = target_seg / 255.0
 
-            stack = torch.stack([input_img, input_seg, target_img, target_seg])
+            stack = torch.stack([target_img, target_seg, input_img, input_seg, ])
 
             pred_seg_nerf = results['semantic'].permute(0,2,1).view(-1,self.hparams.embedding_size,H,W)
             pred_seg_nerf = torch.argmax(pred_seg_nerf.squeeze(), dim=0).cpu()

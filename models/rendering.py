@@ -187,7 +187,7 @@ def render_rays(models,
 
     if N_importance > 0:
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-        z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
+        z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1].clone().detach(),
                              N_importance, det=(perturb == 0))
 
         z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
