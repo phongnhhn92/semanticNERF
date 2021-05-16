@@ -236,8 +236,8 @@ class NeRFSystem(LightningModule):
 
         save_semantic = SaveSemantics('carla')
         if batch_nb == 0:
+            W, H = self.hparams.img_wh
             if self.log_GT == False:
-                W, H = self.hparams.img_wh
                 input_img = batch['input_img'][0].cpu()
                 input_img = input_img * 0.5 + 0.5
 
