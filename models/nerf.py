@@ -84,6 +84,7 @@ class NeRF(nn.Module):
             nn.Linear(W, W // 2),
             nn.ReLU(True),
             nn.Linear(W // 2, in_channels_semantic),
+            nn.LeakyReLU(True),
         )
 
         # direction encoding layers

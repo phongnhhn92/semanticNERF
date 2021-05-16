@@ -36,6 +36,7 @@ class NeRFSystem(LightningModule):
     def __init__(self, hparams):
         super(NeRFSystem, self).__init__()
         self.hparams = hparams
+        self.log_GT = False
         self.loss = loss_dict['color'](coef=self.hparams.rgb_loss_coef)
         self.sem_loss = loss_dict['semantic'](coef=1.0)
         #self.disp_loss = loss_dict['disp'](coef=0.1)
@@ -235,24 +236,28 @@ class NeRFSystem(LightningModule):
 
         save_semantic = SaveSemantics('carla')
         if batch_nb == 0:
-            W, H = self.hparams.img_wh
-            input_img = batch['input_img'][0].cpu()
-            input_img = input_img * 0.5 + 0.5
+            if self.log_GT == False:
+                W, H = self.hparams.img_wh
+                input_img = batch['input_img'][0].cpu()
+                input_img = input_img * 0.5 + 0.5
 
-            input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
-            input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
-            input_seg = input_seg / 255.0
-            # from torchvision.utils import save_image
-            # save_image(input_seg, 'img1.png')
+                input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
+                input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
+                input_seg = input_seg / 255.0
+                # from torchvision.utils import save_image
+                # save_image(input_seg, 'img1.png')
 
-            target_img = batch['target_img'][0].cpu()
-            target_img = target_img * 0.5 + 0.5
+                target_img = batch['target_img'][0].cpu()
+                target_img = target_img * 0.5 + 0.5
 
-            target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
-            target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
-            target_seg = target_seg / 255.0
+                target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
+                target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
+                target_seg = target_seg / 255.0
 
-            stack = torch.stack([target_img, target_seg, input_img, input_seg, ])
+                stack = torch.stack([target_img, target_seg, input_img, input_seg, ])
+                self.logger.experiment.add_images('val/rgb_sem_TARGET-rgb_sem_INPUT',
+                                                  stack, self.global_step)
+                self.log_GT = True
 
             pred_seg_nerf = results['semantic'].permute(0,2,1).view(-1,self.hparams.embedding_size,H,W)
             pred_seg_nerf = torch.argmax(pred_seg_nerf.squeeze(), dim=0).cpu()
@@ -268,9 +273,6 @@ class NeRFSystem(LightningModule):
             pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_seg_nerf, pred_disp, pred_depth])
-
-            self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
-                                              stack, self.global_step)
             self.logger.experiment.add_images('val/predictions',
                                               stack_pred, self.global_step)
 
