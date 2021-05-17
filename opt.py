@@ -126,7 +126,7 @@ def get_opts():
                             help='instance normalization or batch normalization')
     parser.add_argument('--norm_E', type=str, default='spectralinstance',
                             help='instance normalization or batch normalization')
-    parser.add_argument('--rgb_loss_coef', type=int, default=1,
+    parser.add_argument('--rgb_loss_coef', type=int, default=5.,
                         help='Coefficient of the rgb loss')
 
     return parser.parse_args()
