@@ -176,24 +176,24 @@ def render_rays(models,
     z_vals = rearrange(z_vals, 'n1 -> 1 n1').to(rays_o.device)
     z_vals = repeat(z_vals, '1 n1 -> r n1', r=N_rays)
 
-    # if perturb > 0:  # perturb sampling depths (z_vals)
-    #     z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-    #     # get intervals between samples
-    #     upper = torch.cat([z_vals_mid, z_vals[:, -1:]], -1)
-    #     lower = torch.cat([z_vals[:, :1], z_vals_mid], -1)
-    #
-    #     perturb_rand = perturb * torch.rand_like(z_vals)
-    #     z_vals = lower + (upper - lower) * perturb_rand
+    if perturb > 0:  # perturb sampling depths (z_vals)
+        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
+        # get intervals between samples
+        upper = torch.cat([z_vals_mid, z_vals[:, -1:]], -1)
+        lower = torch.cat([z_vals[:, :1], z_vals_mid], -1)
+
+        perturb_rand = perturb * torch.rand_like(z_vals)
+        z_vals = lower + (upper - lower) * perturb_rand
 
     if N_importance > 0:
         z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])  # (N_rays, N_samples-1) interval mid points
-        z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1],
+        z_vals_ = sample_pdf(z_vals_mid, alphas[:, 1:-1].clone().detach(),
                              N_importance, det=(perturb == 0))
 
         z_vals = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)[0]
         # combine coarse and fine samples
 
-    sampled_maps = models['alpha'](alphas).view(N_rays, N_importance + N_planes, N_planes)
+    sampled_maps = models['alpha'](alphas.clone().detach()).view(N_rays, N_importance + N_planes, N_planes)
     sampled_maps = F.softmax(sampled_maps, dim=-1)
     sampled_styles = torch.mul(styles.unsqueeze(1), sampled_maps.unsqueeze(-1)).sum(dim=2)
     xyz_fine = rays_o + rays_d * rearrange(z_vals, 'n1 n2 -> n1 n2 1')
