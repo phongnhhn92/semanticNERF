@@ -135,7 +135,7 @@ class CarlaGVSDataset(Dataset):
         elif cam.startswith('HorizontalCameras'):
             t_vec = [ (id - 2)*self.stereo_baseline, 0 ,0]
         elif cam.startswith('SideCameras'):
-            t_vec = [ (id - 2)*self.stereo_baseline, 0 ,0]
+            t_vec = [ (2 - id)*self.stereo_baseline, 0 ,0]
         return t_vec
 
     def _get_abs_pose(self,file):

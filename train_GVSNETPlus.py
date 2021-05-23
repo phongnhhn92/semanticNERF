@@ -252,7 +252,10 @@ class NeRFSystem(LightningModule):
             pred_seg = pred_seg / 255.0
 
             pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
-            pred_depth = visualize_depth(results['depth'].squeeze().view(H, W).cpu())
+            baseline = self.hparams.stereo_baseline
+            fx = 128.0
+            pred_depth_cvt = baseline * fx / results['depth']
+            pred_depth = save_depth(pred_depth_cvt.squeeze().view(H, W).cpu())
             pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
 
             stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
@@ -282,7 +285,7 @@ def main(hparams):
     logger = TestTubeLogger(save_dir=hparams.log_dir,
                             name=hparams.exp_name,
                             debug=False,
-                            create_git_tag=False,
+                            create_git_tag=True,
                             log_graph=False)
 
     trainer = Trainer(max_epochs=hparams.num_epochs,

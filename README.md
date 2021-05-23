@@ -19,6 +19,9 @@ sample more dense points. The MLP model is conditioned on (1) semantic class of 
 Predicted MPI alpha is feed to an AlphaMLP to sample a mapping from a coarse-to-dense appearance MPI
 -> Sample more points along the ray, rather than just 32 points of SUN network
 
+#### 23-05-2021:
+SUN pretrained: [link](https://drive.google.com/drive/folders/177SAIUCnefXgaOLgVCIONAZNX5WgEXv_)
+
 ![](/images/GVS_NERF.jpg "Ideas")
 
 #### Dataset:
