@@ -247,5 +247,9 @@ dmypy.json
 /ckpts
 /visuals
 /results
-
+/scripts/train_e_*
+/scripts/train_o_*
+/output
+/GVSPlus
+/.vscode
 

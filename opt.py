@@ -60,8 +60,9 @@ def get_opts():
                         help='number of gpus')
 
     parser.add_argument('--SUN_path', type=str,
-                        default='/media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/model_epoch_29.pt',
+                        default='',
                         help='pretrained SUN model')
+    # /media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/model_epoch_29.pt
     # /media/phong/Data2TB/dataset/GVSNet/pre_trained_models/carla/SUN.pt
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
