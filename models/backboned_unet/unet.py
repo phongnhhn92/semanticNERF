@@ -67,7 +67,7 @@ def get_backbone(name, pretrained=True):
 class UpsampleBlock(nn.Module):
 
 
-    def __init__(self, ch_in, ch_out=None, skip_in=0, use_bn=True, parametric=False):
+    def __init__(self, ch_in, ch_out=None, skip_in=0, use_bn=True, parametric=False, useSkip=False):
         super(UpsampleBlock, self).__init__()
 
         self.parametric = parametric
@@ -89,7 +89,10 @@ class UpsampleBlock(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
         # second convolution
-        conv2_in = ch_out if not parametric else ch_out + skip_in
+        if useSkip:
+            conv2_in = ch_out if not parametric else ch_out + skip_in
+        else:
+            conv2_in = ch_out
         self.conv2 = nn.Conv2d(in_channels=conv2_in, out_channels=ch_out, kernel_size=(3, 3),
                                stride=1, padding=1, bias=(not use_bn))
         self.bn2 = nn.BatchNorm2d(ch_out) if use_bn else None
@@ -128,10 +131,11 @@ class Unet(nn.Module):
                  out_channels=21,
                  decoder_filters=(256, 128, 64, 32, 16),
                  parametric_upsampling=True,
+                 useSkip=True,
                  shortcut_features='default',
                  decoder_use_batchnorm=True):
         super(Unet, self).__init__()
-
+        self.useSkip = useSkip
         self.backbone_name = backbone_name
 
         self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(backbone_name, pretrained=pretrained)
@@ -150,7 +154,8 @@ class Unet(nn.Module):
             self.upsample_blocks.append(UpsampleBlock(filters_in, filters_out,
                                                       skip_in=shortcut_chs[num_blocks-i-1],
                                                       parametric=parametric_upsampling,
-                                                      use_bn=decoder_use_batchnorm))
+                                                      use_bn=decoder_use_batchnorm,
+                                                      useSkip=useSkip))
             self.spade_blocks.append(SPADEResnetBlock(filters_out, filters_out,
                                           opts))
 
@@ -177,7 +182,8 @@ class Unet(nn.Module):
         for skip_name, upsample_block,spade_block \
                 in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
             skip_features = features[skip_name]
-            x = upsample_block(x, skip_features)
+            skip_features = None if self.useSkip == False else skip_features
+            x = upsample_block(x, skip_features)            
             x = spade_block(x, layered_sem)
 
         x = self.final_conv(x)

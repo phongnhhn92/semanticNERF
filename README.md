@@ -2,6 +2,20 @@
 
 #### Slide: [link](https://docs.google.com/presentation/d/1j3yNFRC8Yd_XPg7eKPdrRCBsmp2IfE-_BMG9QVAh7EY/edit?usp=sharing)
 
+#### 22-06-2021 (debug on CSC):
+```
+python train_GVSNETPlus.py --num_gpus 1 \
+--dataset_name carlaGVS --root_dir /mnt/disk1/dataset/GVS \
+--log_dir /mnt/disk1/dataset/GVS/trained_models/GVSPlus \
+--SUN_path /mnt/disk1/dataset/GVS/model_epoch_29.pt \
+--img_wh 256 256 --noise_std 0.1 --num_epochs 1 \
+--batch_size 1 --num_rays 4096 --N_importance 32 \
+--optimizer adam --lr 5e-4 --lr_scheduler steplr \
+--decay_step 10 25 --decay_gamma 0.5 \
+--use_disparity_loss \
+ --exp_name exp_GVSPlus_AlphaSampler_NoSkip
+```
+
 #### 18-04-2021:
 Starting point: Finish training code with simple style encoder (no VAE). Based on the predicted alphas of SUN model to 
 sample more dense points. The MLP model is conditioned on (1) semantic class of that ray, (2) style encoded feature F of the entire style image.

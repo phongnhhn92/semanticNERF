@@ -39,8 +39,8 @@ if __name__ == '__main__':
         os.mkdir(test_folder_output)
 
     with torch.no_grad():
-        for i,data in tqdm(enumerate(test_dataloader)):
-            # print('Processing {}/{}'.format(i, len(test_dataloader)))
+        for i,data in enumerate(test_dataloader):
+            print('Processing {}/{}'.format(i, len(test_dataloader)))
             # move to gpu
             input={}
             for k,v in data.items():

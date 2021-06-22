@@ -60,18 +60,18 @@ class NeRFSystem(LightningModule):
         if self.hparams.SUN_path != '':
             self.SUN.load_state_dict(torch.load(self.hparams.SUN_path))
             self.SUN.eval()
+            # Original weight use SyncBatchNorm, replace them with Batchnorm
+            self.SUN = convert_model(self.SUN)
         else:
-            self.feature_models['sun'] = self.SUN
-
-        # Original weight use SyncBatchNorm, replace them with Batchnorm
-        self.SUN = convert_model(self.SUN)
+            self.feature_models['sun'] = self.SUN        
 
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='resnet18',
                             pretrained=True,
                             encoder_freeze=True,
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
-                            parametric_upsampling=False)
+                            parametric_upsampling=True,
+                            useSkip=False)
         self.feature_models['encoder'] = self.encoder
         print('Init models !!!')
 
