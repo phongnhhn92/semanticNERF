@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 
 from einops import rearrange
+from einops.einops import repeat
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TestTubeLogger
@@ -48,7 +49,11 @@ class NeRFSystem(LightningModule):
 
         self.feature_models = {}
         # NERF model
-        self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
+        if self.hparams.use_vae:
+            self.KLloss = loss_dict['kl']()
+            self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size + 64)
+        else:
+            self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
         # Alpha MLP
         self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
                                out_channels=self.hparams.num_planes * (
@@ -71,7 +76,8 @@ class NeRFSystem(LightningModule):
                             encoder_freeze=True,
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=True,
-                            useSkip=False)
+                            useSkip=self.hparams.useSkip,
+                            training=self.hparams.training)
         self.feature_models['encoder'] = self.encoder
         print('Init models !!!')
 
@@ -95,7 +101,7 @@ class NeRFSystem(LightningModule):
 
         # Encoder
         B, S, H, W = data['input_seg'].shape
-        layered_appearance = self.encoder(data['style_img'], seg_mul_layer)
+        layered_appearance, output_vae = self.encoder(data['style_img'], seg_mul_layer)
         layered_appearance = layered_appearance.view(
             B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
         mpi_appearance = self.apply_association(
@@ -128,8 +134,14 @@ class NeRFSystem(LightningModule):
             chunk = self.hparams.chunk // 16
 
         final_results = {}
-        # Concat feature and semantic maps
+        # Concat feature and semantic maps        
         all_appearance = torch.cat([all_appearance, all_semantic], dim=-1)
+        kl_loss = None
+        if self.hparams.use_vae:
+            noise = rearrange(output_vae['z'],'b f -> b 1 1 f')
+            noise = repeat(noise,'b 1 1 f -> b n d f', n = all_appearance.shape[1], d = D)
+            all_appearance = torch.cat([all_appearance, noise],dim = -1)
+            kl_loss = self.KLloss(output_vae['mu'],output_vae['logvar'])
         for b in range(SB):
             results = defaultdict(list)
             R = all_rays[b].shape[0]
@@ -174,10 +186,12 @@ class NeRFSystem(LightningModule):
         if self.hparams.SUN_path == '':
             loss['semantic_loss'] = sun_loss['semantics_loss']
             loss['disp_loss'] = sun_loss['disp_loss']
+        if kl_loss is not None:
+            loss['kl_loss'] = kl_loss
         final_results['semantic_nv'] = semantics_nv
         final_results['disp_nv'] = disp_nv
         final_results['loss_dict'] = loss
-        psnr_ = psnr(final_results[f'rgb'], all_rgb_gt)
+        psnr_ = psnr(final_results['rgb'], all_rgb_gt)
         final_results['psnr'] = psnr_
         return final_results
 
@@ -276,7 +290,7 @@ class NeRFSystem(LightningModule):
 def main(hparams):
     system = NeRFSystem(hparams)
     checkpoint_callback = \
-        ModelCheckpoint(dirpath=os.path.join(hparams.log_dir, f'ckpts/{hparams.exp_name}'),
+        ModelCheckpoint(dirpath=os.path.join(hparams.log_dir, 'ckpts/{}'.format(hparams.exp_name)),
                         filename='{epoch}-{val_loss:.2f}',
                         monitor='val/loss',
                         mode='max',

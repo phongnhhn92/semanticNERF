@@ -62,7 +62,7 @@ class NeRF(nn.Module):
 
         # style encoding layer
         for j in range(self.style_layers):
-            if j == 0:
+            if j == 0:                
                 layer = nn.Linear(in_channels_style, W)
             else:
                 layer = nn.Linear(W, W)

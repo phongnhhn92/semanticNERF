@@ -133,9 +133,12 @@ class Unet(nn.Module):
                  parametric_upsampling=True,
                  useSkip=True,
                  shortcut_features='default',
-                 decoder_use_batchnorm=True):
+                 decoder_use_batchnorm=True,
+                 training=True):
         super(Unet, self).__init__()
         self.useSkip = useSkip
+        self.training = training
+        self.use_vae = opts.use_vae
         self.backbone_name = backbone_name
 
         self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(backbone_name, pretrained=pretrained)
@@ -149,6 +152,12 @@ class Unet(nn.Module):
         decoder_filters = decoder_filters[:len(self.shortcut_features)]  # avoiding having more blocks than skip connections
         decoder_filters_in = [bb_out_chs] + list(decoder_filters[:-1])
         num_blocks = len(self.shortcut_features)
+        if self.use_vae:
+            print('Use VAE !')
+            feature_size = 8 # hardcoded for 256x256 images using resnet18
+            channels = 512
+            self.fc_mu = nn.Linear(channels * feature_size * feature_size, 64)
+            self.fc_var = nn.Linear(channels * feature_size * feature_size, 64)
         for i, [filters_in, filters_out] in enumerate(zip(decoder_filters_in, decoder_filters)):
             #print('upsample_blocks[{}] in: {}   out: {}'.format(i, filters_in, filters_out))
             self.upsample_blocks.append(UpsampleBlock(filters_in, filters_out,
@@ -177,8 +186,19 @@ class Unet(nn.Module):
     def forward(self, input, layered_sem):
 
         """ Forward propagation in U-Net. """
-
         x, features = self.forward_backbone(input)
+        output_vae={}
+        if self.use_vae:            
+            input_vae = x.clone()
+            input_vae = input_vae.view(input_vae.size(0), -1)
+            mu = self.fc_mu(input_vae)
+            output_vae['mu'] = mu            
+            logvar = self.fc_var(input_vae)
+            z = self.reparameterize(mu, logvar)
+            output_vae['logvar'] = logvar
+            output_vae['z'] = z
+        else:
+            output_vae['z'] = None
         for skip_name, upsample_block,spade_block \
                 in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
             skip_features = features[skip_name]
@@ -188,7 +208,7 @@ class Unet(nn.Module):
 
         x = self.final_conv(x)
         x = F.leaky_relu(x)
-        return x
+        return x, output_vae
 
     def forward_backbone(self, x):
 
@@ -221,6 +241,14 @@ class Unet(nn.Module):
                 out_channels = x.shape[1]
                 break
         return channels, out_channels
+    
+    def reparameterize(self, mu, logvar):
+        if not self.training:
+            return mu
+        else:
+            std = torch.exp(0.5 * logvar)
+            eps = torch.randn_like(std)
+            return eps.mul(std) + mu
 
     def get_pretrained_parameters(self):
         for name, param in self.backbone.named_parameters():

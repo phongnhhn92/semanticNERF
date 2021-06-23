@@ -2,7 +2,7 @@ import argparse
 
 def get_opts():
     parser = argparse.ArgumentParser()
-
+    parser.add_argument('--training', default=False, action='store_true')
     parser.add_argument('--root_dir', type=str,
                         default='/home/ubuntu/data/nerf_example_data/nerf_synthetic/lego',
                         help='root directory of dataset')
@@ -35,7 +35,7 @@ def get_opts():
     parser.add_argument('--use_style_encoder', default=False, action='store_true')
     parser.add_argument('--style_feat', type=int, default=256,
                         help='output dimension of the style encoder')
-    parser.add_argument('--use_vae', default=True, action='store_true')
+    parser.add_argument('--use_vae', default=False, action='store_true')
     parser.add_argument('--use_disparity_loss', default=False, action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
                             help='for carla=0.1, for other set to 0.5')
@@ -58,6 +58,9 @@ def get_opts():
                         help='number of training epochs')
     parser.add_argument('--num_gpus', type=int, default=1,
                         help='number of gpus')
+
+    parser.add_argument('--useSkip', default=False, action="store_true",
+                        help='use skip connection in Unet or not')
 
     parser.add_argument('--SUN_path', type=str,
                         default='',
