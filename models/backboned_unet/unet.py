@@ -1,3 +1,5 @@
+from models.conv_network import ResBlock
+from models.backboned_unet.adain import AdaIN
 from losses import ContentLoss, StyleLoss
 import torch
 import torch.nn as nn
@@ -5,8 +7,8 @@ from torchvision import models
 from torch.nn import functional as F
 from models.spade.architecture import SPADEResnetBlock
 
-def get_backbone(name, pretrained=True):
 
+def get_backbone(name, pretrained=True):
     """ Loading backbone, defining names for skip-connections and encoder output. """
 
     # loading backbone model
@@ -38,7 +40,8 @@ def get_backbone(name, pretrained=True):
         from unet_backbone import UnetEncoder
         backbone = UnetEncoder(3)
     else:
-        raise NotImplemented('{} backbone model is not implemented so far.'.format(name))
+        raise NotImplemented(
+            '{} backbone model is not implemented so far.'.format(name))
 
     # specifying skip feature and output names
     if name.startswith('resnet'):
@@ -54,19 +57,20 @@ def get_backbone(name, pretrained=True):
     #     feature_names = [None, 'Mixed_5d', 'Mixed_6e']
     #     backbone_output = 'Mixed_7c'
     elif name.startswith('densenet'):
-        feature_names = [None, 'relu0', 'denseblock1', 'denseblock2', 'denseblock3']
+        feature_names = [None, 'relu0', 'denseblock1',
+                         'denseblock2', 'denseblock3']
         backbone_output = 'denseblock4'
     elif name == 'unet_encoder':
         feature_names = ['module1', 'module2', 'module3', 'module4']
         backbone_output = 'module5'
     else:
-        raise NotImplemented('{} backbone model is not implemented so far.'.format(name))
+        raise NotImplemented(
+            '{} backbone model is not implemented so far.'.format(name))
 
     return backbone, feature_names, backbone_output
 
 
 class UpsampleBlock(nn.Module):
-
 
     def __init__(self, ch_in, ch_out=None, skip_in=0, use_bn=True, parametric=False, useSkip=False):
         super(UpsampleBlock, self).__init__()
@@ -122,17 +126,18 @@ class UpsampleBlock(nn.Module):
 class Unet(nn.Module):
 
     """ U-Net (https://arxiv.org/pdf/1505.04597.pdf) implementation with pre-trained torchvision backbones."""
-    #for vgg19 (512, 512, 256, 128, 64)
+    # for vgg19 (512, 512, 256, 128, 64)
+
     def __init__(self,
                  opts,
                  backbone_name='resnet50',
                  pretrained=True,
                  encoder_freeze=False,
                  out_channels=21,
-                 decoder_filters=(512, 512, 256, 128, 64), 
+                 decoder_filters=(512, 512, 256, 128, 64),
                  parametric_upsampling=True,
-                 useSkip = False,
-                 useStyleLoss = False,
+                 useSkip=False,
+                 useStyleLoss=False,
                  shortcut_features='default',
                  decoder_use_batchnorm=True):
         super(Unet, self).__init__()
@@ -143,7 +148,8 @@ class Unet(nn.Module):
             self.styleLoss = StyleLoss()
         self.backbone_name = backbone_name
 
-        self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(backbone_name, pretrained=pretrained)
+        self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(
+            backbone_name, pretrained=pretrained)
         shortcut_chs, bb_out_chs = self.infer_skip_channels()
         if shortcut_features != 'default':
             self.shortcut_features = shortcut_features
@@ -151,7 +157,8 @@ class Unet(nn.Module):
         # build decoder part
         self.upsample_blocks = nn.ModuleList()
         self.spade_blocks = nn.ModuleList()
-        decoder_filters = decoder_filters[:len(self.shortcut_features)]  # avoiding having more blocks than skip connections
+        # avoiding having more blocks than skip connections
+        decoder_filters = decoder_filters[:len(self.shortcut_features)]
         decoder_filters_in = [bb_out_chs] + list(decoder_filters[:-1])
         num_blocks = len(self.shortcut_features)
         for i, [filters_in, filters_out] in enumerate(zip(decoder_filters_in, decoder_filters)):
@@ -162,52 +169,59 @@ class Unet(nn.Module):
                                                       use_bn=decoder_use_batchnorm,
                                                       useSkip=useSkip))
             self.spade_blocks.append(SPADEResnetBlock(filters_out, filters_out,
-                                          opts))
+                                                      opts))
+        self.base_res_layers = nn.Sequential(
+            *[ResBlock(512, 1) for i in range(3)])
+        if self.useStyleLoss:
+            self.Adain = AdaIN()
 
-        self.final_conv = nn.Conv2d(decoder_filters[-1], out_channels, kernel_size=(1, 1))
-
+        self.final_conv = nn.Conv2d(
+            decoder_filters[-1], out_channels, kernel_size=(1, 1))
 
         if encoder_freeze:
             self.freeze_encoder()
 
-        self.replaced_conv1 = False  # for accommodating  inputs with different number of channels later
+        # for accommodating  inputs with different number of channels later
+        self.replaced_conv1 = False
 
     def freeze_encoder(self):
-
         """ Freezing encoder parameters, the newly initialized decoder parameters are remaining trainable. """
 
         for param in self.backbone.parameters():
             param.requires_grad = False
 
     def forward(self, input, layered_sem):
-
         """ Forward propagation in U-Net. """
-        output_dict={}
+        output_dict = {}
         x, features = self.forward_backbone(input)
-        for skip_name, upsample_block,spade_block \
-                in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
-            skip_features = features[skip_name]            
+
+        # Add some resblock in the bottleneck
+        x = self.base_res_layers(x)
+
+        for skip_name, upsample_block, spade_block \
+                in zip(self.shortcut_features[::-1], self.upsample_blocks, self.spade_blocks):
+            skip_features = features[skip_name]
             skip_features_ = None if self.useSkip == False else skip_features
-            
-            x = upsample_block(x, skip_features_)            
-            x = spade_block(x, layered_sem)            
-            
+
+            x = upsample_block(x, skip_features_)
+            x = spade_block(x, layered_sem)
+
             if self.useStyleLoss:
                 assert x.shape == skip_features.shape, 'Mismatch !'
-                target = skip_features.detach()                
-                contentLoss = self.contentLoss(x,target)
-                styleLoss = self.styleLoss(x,target)
+                target = skip_features.detach()
+                x = self.Adain(x,target)
+                contentLoss = self.contentLoss(x, target)
+                styleLoss = self.styleLoss(x, target)
                 style_transfer_loss = contentLoss + styleLoss
                 output_dict['style_loss'] = style_transfer_loss
 
         x = self.final_conv(x)
-        x = F.leaky_relu(x)        
+        x = F.leaky_relu(x)
         output_dict['out'] = x
-        
+
         return output_dict
 
     def forward_backbone(self, x):
-
         """ Forward propagation in backbone encoder network.  """
 
         features = {None: None} if None in self.shortcut_features else dict()
@@ -221,12 +235,13 @@ class Unet(nn.Module):
         return x, features
 
     def infer_skip_channels(self):
-
         """ Getting the number of channels at skip connections and at the output of the encoder. """
 
         x = torch.zeros(1, 3, 224, 224)
-        has_fullres_features = self.backbone_name.startswith('vgg') or self.backbone_name == 'unet_encoder'
-        channels = [] if has_fullres_features else [0]  # only VGG has features at full resolution
+        has_fullres_features = self.backbone_name.startswith(
+            'vgg') or self.backbone_name == 'unet_encoder'
+        # only VGG has features at full resolution
+        channels = [] if has_fullres_features else [0]
 
         # forward run in backbone to count channels (dirty solution but works for *any* Module)
         for name, child in self.backbone.named_children():

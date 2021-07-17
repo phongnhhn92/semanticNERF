@@ -48,11 +48,12 @@ class NeRFSystem(LightningModule):
 
         self.feature_models = {}
         # NERF model
-        self.nerf_model = NeRF(in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
+        self.nerf_model = NeRF(
+            in_channels_style=self.hparams.appearance_feature + self.hparams.embedding_size)
         # Alpha MLP
         self.alpha = Alpha_MLP(in_channels=self.hparams.num_planes,
                                out_channels=self.hparams.num_planes * (
-                                       self.hparams.num_planes + self.hparams.N_importance))
+                                   self.hparams.num_planes + self.hparams.N_importance))
         self.mlp_model = {'nerf': self.nerf_model, 'alpha': self.alpha}
 
         # SUN model
@@ -63,7 +64,7 @@ class NeRFSystem(LightningModule):
             # Original weight use SyncBatchNorm, replace them with Batchnorm
             self.SUN = convert_model(self.SUN)
         else:
-            self.feature_models['sun'] = self.SUN        
+            self.feature_models['sun'] = self.SUN
 
         # Encoder
         self.encoder = Unet(self.hparams, backbone_name='vgg19',
@@ -72,11 +73,9 @@ class NeRFSystem(LightningModule):
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=True,
                             useSkip=hparams.use_Skip,
-                            useStyleLoss = hparams.use_style_loss)
+                            useStyleLoss=hparams.use_style_loss)
         self.feature_models['encoder'] = self.encoder
         print('Init models !!!')
-
-
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -90,7 +89,7 @@ class NeRFSystem(LightningModule):
                 _, seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
                     = self.SUN(data)
         else:
-            sun_loss,seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
+            sun_loss, seg_mul_layer, grid, associations, semantics_nv, mpi_semantics_nv, disp_nv, mpi_alpha_nv \
                 = self.SUN(data)
         seg_mul_layer = seg_mul_layer.flatten(1, 2)
 
@@ -111,9 +110,12 @@ class NeRFSystem(LightningModule):
             h_matrix=h_mats, src_img=mpi_appearance, grid=grid)
 
         SB, D, F, H, W = mpi_appearance_nv.shape
-        mpi_appearance_nv = rearrange(mpi_appearance_nv, 'b d f h w -> b (h w) d f')
-        mpi_semantics_nv = rearrange(mpi_semantics_nv, 'b d f h w -> b (h w) d f')
-        mpi_alpha_nv = rearrange(mpi_alpha_nv.squeeze(2), 'b d h w -> b (h w) d')
+        mpi_appearance_nv = rearrange(
+            mpi_appearance_nv, 'b d f h w -> b (h w) d f')
+        mpi_semantics_nv = rearrange(
+            mpi_semantics_nv, 'b d f h w -> b (h w) d f')
+        mpi_alpha_nv = rearrange(
+            mpi_alpha_nv.squeeze(2), 'b d h w -> b (h w) d')
 
         if training:
             all_rgb_gt, all_rays, all_alphas, all_appearance, all_semantic \
@@ -162,11 +164,14 @@ class NeRFSystem(LightningModule):
                     final_results[k] = results[k]
             else:
                 for k, v in results.items():
-                    final_results[k] = torch.cat([final_results[k], results[k]], dim=0)
+                    final_results[k] = torch.cat(
+                        [final_results[k], results[k]], dim=0)
         for k, v in final_results.items():
             if training:
-                assert final_results[k].shape[0] == SB * self.hparams.num_rays, 'Error reshaping !'
-                final_results[k] = final_results[k].view(SB, self.hparams.num_rays, -1)
+                assert final_results[k].shape[0] == SB * \
+                    self.hparams.num_rays, 'Error reshaping !'
+                final_results[k] = final_results[k].view(
+                    SB, self.hparams.num_rays, -1)
             else:
                 final_results[k] = final_results[k].unsqueeze(0)
 
@@ -192,7 +197,8 @@ class NeRFSystem(LightningModule):
         self.val_dataset = dataset(self.hparams, split='val')
 
     def configure_optimizers(self):
-        self.optimizer = get_optimizer2(self.hparams, self.feature_models, self.mlp_model)
+        self.optimizer = get_optimizer2(
+            self.hparams, self.feature_models, self.mlp_model)
         scheduler = get_scheduler(self.hparams, self.optimizer)
         return [self.optimizer], [scheduler]
 
@@ -213,7 +219,8 @@ class NeRFSystem(LightningModule):
         if self.hparams.use_style_loss:
             self.log('train/style_loss', results['loss_dict']['style_loss'])
         if self.hparams.SUN_path == '':
-            self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
+            self.log('train/semantic_loss',
+                     results['loss_dict']['semantic_loss'])
             self.log('train/disp_loss', results['loss_dict']['disp_loss'])
         self.log('train/loss', loss)
         self.log('train/psnr', results['psnr'], prog_bar=True)
@@ -223,7 +230,8 @@ class NeRFSystem(LightningModule):
         return DataLoader(self.val_dataset,
                           shuffle=False,
                           num_workers=0 if _DEBUG else 8,
-                          batch_size=1,  # validate one image (H*W rays) at a time
+                          # validate one image (H*W rays) at a time
+                          batch_size=1,
                           pin_memory=True)
 
     def validation_step(self, batch, batch_nb):
@@ -238,7 +246,8 @@ class NeRFSystem(LightningModule):
             input_img = input_img * 0.5 + 0.5
 
             input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
-            input_seg = torch.from_numpy(save_semantic.to_color(input_seg)).permute(2, 0, 1)
+            input_seg = torch.from_numpy(
+                save_semantic.to_color(input_seg)).permute(2, 0, 1)
             input_seg = input_seg / 255.0
             # from torchvision.utils import save_image
             # save_image(input_seg, 'img1.png')
@@ -247,13 +256,16 @@ class NeRFSystem(LightningModule):
             target_img = target_img * 0.5 + 0.5
 
             target_seg = torch.argmax(batch['target_seg'][0], dim=0).cpu()
-            target_seg = torch.from_numpy(save_semantic.to_color(target_seg)).permute(2, 0, 1)
+            target_seg = torch.from_numpy(
+                save_semantic.to_color(target_seg)).permute(2, 0, 1)
             target_seg = target_seg / 255.0
 
             stack = torch.stack([input_img, input_seg, target_img, target_seg])
 
-            pred_seg = torch.argmax(results['semantic_nv'].squeeze(), dim=0).cpu()
-            pred_seg = torch.from_numpy(save_semantic.to_color(pred_seg)).permute(2, 0, 1)
+            pred_seg = torch.argmax(
+                results['semantic_nv'].squeeze(), dim=0).cpu()
+            pred_seg = torch.from_numpy(
+                save_semantic.to_color(pred_seg)).permute(2, 0, 1)
             pred_seg = pred_seg / 255.0
 
             pred_disp = save_depth(results['disp_nv'].squeeze().cpu())
@@ -261,9 +273,11 @@ class NeRFSystem(LightningModule):
             fx = 128.0
             pred_depth_cvt = baseline * fx / results['depth']
             pred_depth = save_depth(pred_depth_cvt.squeeze().view(H, W).cpu())
-            pred_rgb = results['rgb'].squeeze().permute(1, 0).view(3, H, W).cpu()
+            pred_rgb = results['rgb'].squeeze().permute(
+                1, 0).view(3, H, W).cpu()
 
-            stack_pred = torch.stack([pred_rgb, pred_seg, pred_disp, pred_depth])
+            stack_pred = torch.stack(
+                [pred_rgb, pred_seg, pred_disp, pred_depth])
 
             self.logger.experiment.add_images('val/rgb_sem_INPUT-rgb_sem_TARGET',
                                               stack, self.global_step)

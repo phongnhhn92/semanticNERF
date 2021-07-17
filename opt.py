@@ -1,5 +1,6 @@
 import argparse
 
+
 def get_opts():
     parser = argparse.ArgumentParser()
 
@@ -13,7 +14,7 @@ def get_opts():
                         default='train',
                         help='mode of model')
     parser.add_argument('--dataset_name', type=str, default='blender',
-                        choices=['blender', 'llff','carla','carlaGVS'],
+                        choices=['blender', 'llff', 'carla', 'carlaGVS'],
                         help='which dataset to train/val')
     parser.add_argument('--img_wh', nargs="+", type=int, default=[800, 800],
                         help='resolution (img_w, img_h) of the image')
@@ -24,25 +25,29 @@ def get_opts():
     parser.add_argument('--N_importance', type=int, default=32,
                         help='number of additional fine samples')
     parser.add_argument('--mpi_encoder_features', type=int, default=96,
-                            help='this controls number feature channels at the output of the base encoder-decoder network')
+                        help='this controls number feature channels at the output of the base encoder-decoder network')
 
     parser.add_argument('--embedding_size', type=int, default=13,
-                            help='when # of semantic classes is large SUN and LTD will be fed with lower dimensoinal embedding of semantics')
+                        help='when # of semantic classes is large SUN and LTD will be fed with lower dimensoinal embedding of semantics')
     parser.add_argument('--num_layers', type=int, default=3,
                         help='number of uplifted semantic layers')
     parser.add_argument('--stereo_baseline', type=float, default=0.54,
-                            help='assumed baseline for converting depth to disparity')
-    parser.add_argument('--use_style_encoder', default=False, action='store_true')
+                        help='assumed baseline for converting depth to disparity')
+    parser.add_argument('--use_style_encoder',
+                        default=False, action='store_true')
     parser.add_argument('--style_feat', type=int, default=256,
                         help='output dimension of the style encoder')
     parser.add_argument('--use_vae', default=True, action='store_true')
-    parser.add_argument('--use_disparity_loss', default=False, action='store_true')
+    parser.add_argument('--use_disparity_loss',
+                        default=False, action='store_true')
     parser.add_argument('--use_Skip', default=False, action='store_true')
     parser.add_argument('--use_style_loss', default=False, action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
-                            help='for carla=0.1, for other set to 0.5')
-    parser.add_argument('--near_plane', type=int, default=1.5, help='nearest plane: 1.5 for carla')
-    parser.add_argument('--far_plane', type=int, default=20000, help='far plane: 20000 for carla')
+                        help='for carla=0.1, for other set to 0.5')
+    parser.add_argument('--near_plane', type=int, default=1.5,
+                        help='nearest plane: 1.5 for carla')
+    parser.add_argument('--far_plane', type=int, default=20000,
+                        help='far plane: 20000 for carla')
 
     parser.add_argument('--spheric_poses', default=False, action="store_true",
                         help='whether images are taken in spheric poses (for llff)')
@@ -51,7 +56,7 @@ def get_opts():
                         help='factor to perturb depth sampling points')
     parser.add_argument('--noise_std', type=float, default=1.0,
                         help='std dev of noise added to regularize sigma')
-        
+
     parser.add_argument('--batch_size', type=int, default=1024,
                         help='batch size')
     parser.add_argument('--chunk', type=int, default=32*1024,
@@ -85,7 +90,7 @@ def get_opts():
     parser.add_argument('--lr_scheduler', type=str, default='cosine',
                         help='scheduler type',
                         choices=['steplr', 'cosine', 'poly'])
-    #### params for warmup, only applied when optimizer == 'sgd' or 'adam'
+    # params for warmup, only applied when optimizer == 'sgd' or 'adam'
     parser.add_argument('--warmup_multiplier', type=float, default=1.0,
                         help='lr is multiplied by this factor after --warmup_epochs')
     parser.add_argument('--warmup_epochs', type=int, default=0,
@@ -107,15 +112,16 @@ def get_opts():
 
     parser.add_argument('--appearance_feature', type=int, default=32)
     parser.add_argument('--num_upsampling_layers',
-                            choices=('normal', 'more', 'most'), default='normal',
-                            help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
+                        choices=('normal', 'more', 'most'), default='normal',
+                        help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
     parser.add_argument('--use_instance_mask', action='store_true',
-                            help='is paased, instance mask will be assuned to be present')
+                        help='is paased, instance mask will be assuned to be present')
 
-    ######### Arguments for SPADE
-    parser.add_argument('--d_step_per_g', type=int, default=1, help='num of d updates for each g update')
+    # Arguments for SPADE
+    parser.add_argument('--d_step_per_g', type=int, default=1,
+                        help='num of d updates for each g update')
     parser.add_argument('--crop_size', type=int, default=256,
-                            help='Crop to the width of crop_size (after initially scaling the images to load_size.)')
+                        help='Crop to the width of crop_size (after initially scaling the images to load_size.)')
     parser.add_argument('--spade_k_size', type=int, default=3)
     parser.add_argument('--num_D', type=int, default=3)
     parser.add_argument('--output_nc', type=int, default=3)
@@ -124,11 +130,11 @@ def get_opts():
     parser.add_argument('--contain_dontcare_label', action='store_true')
     parser.add_argument('--no_instance', default=True, type=bool)
     parser.add_argument('--norm_G', type=str, default='spectralspadesyncbatch3x3',
-                            help='instance normalization or batch normalization')
+                        help='instance normalization or batch normalization')
     parser.add_argument('--norm_D', type=str, default='spectralinstance',
-                            help='instance normalization or batch normalization')
+                        help='instance normalization or batch normalization')
     parser.add_argument('--norm_E', type=str, default='spectralinstance',
-                            help='instance normalization or batch normalization')
+                        help='instance normalization or batch normalization')
     parser.add_argument('--rgb_loss_coef', type=int, default=1,
                         help='Coefficient of the rgb loss')
 
