@@ -37,6 +37,8 @@ def get_opts():
                         help='output dimension of the style encoder')
     parser.add_argument('--use_vae', default=True, action='store_true')
     parser.add_argument('--use_disparity_loss', default=False, action='store_true')
+    parser.add_argument('--use_Skip', default=False, action='store_true')
+    parser.add_argument('--use_style_loss', default=False, action='store_true')
     parser.add_argument('--disparity_weight', default=0.1, type=float,
                             help='for carla=0.1, for other set to 0.5')
     parser.add_argument('--near_plane', type=int, default=1.5, help='nearest plane: 1.5 for carla')

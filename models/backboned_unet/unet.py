@@ -1,6 +1,7 @@
+from losses import ContentLoss, StyleLoss
 import torch
 import torch.nn as nn
-from torchvision import models, datasets, transforms
+from torchvision import models
 from torch.nn import functional as F
 from models.spade.architecture import SPADEResnetBlock
 
@@ -98,7 +99,6 @@ class UpsampleBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(ch_out) if use_bn else None
 
     def forward(self, x, skip_connection=None):
-
         x = self.up(x) if self.parametric else F.interpolate(x, size=None, scale_factor=2, mode='bilinear',
                                                              align_corners=None)
         if self.parametric:
@@ -122,20 +122,25 @@ class UpsampleBlock(nn.Module):
 class Unet(nn.Module):
 
     """ U-Net (https://arxiv.org/pdf/1505.04597.pdf) implementation with pre-trained torchvision backbones."""
-
+    #for vgg19 (512, 512, 256, 128, 64)
     def __init__(self,
                  opts,
                  backbone_name='resnet50',
                  pretrained=True,
                  encoder_freeze=False,
                  out_channels=21,
-                 decoder_filters=(256, 128, 64, 32, 16),
+                 decoder_filters=(512, 512, 256, 128, 64), 
                  parametric_upsampling=True,
-                 useSkip=True,
+                 useSkip = False,
+                 useStyleLoss = False,
                  shortcut_features='default',
                  decoder_use_batchnorm=True):
         super(Unet, self).__init__()
         self.useSkip = useSkip
+        self.useStyleLoss = useStyleLoss
+        if self.useStyleLoss:
+            self.contentLoss = ContentLoss()
+            self.styleLoss = StyleLoss()
         self.backbone_name = backbone_name
 
         self.backbone, self.shortcut_features, self.bb_out_name = get_backbone(backbone_name, pretrained=pretrained)
@@ -177,18 +182,29 @@ class Unet(nn.Module):
     def forward(self, input, layered_sem):
 
         """ Forward propagation in U-Net. """
-
+        output_dict={}
         x, features = self.forward_backbone(input)
         for skip_name, upsample_block,spade_block \
                 in zip(self.shortcut_features[::-1], self.upsample_blocks,self.spade_blocks):
-            skip_features = features[skip_name]
-            skip_features = None if self.useSkip == False else skip_features
-            x = upsample_block(x, skip_features)            
-            x = spade_block(x, layered_sem)
+            skip_features = features[skip_name]            
+            skip_features_ = None if self.useSkip == False else skip_features
+            
+            x = upsample_block(x, skip_features_)            
+            x = spade_block(x, layered_sem)            
+            
+            if self.useStyleLoss:
+                assert x.shape == skip_features.shape, 'Mismatch !'
+                target = skip_features.detach()                
+                contentLoss = self.contentLoss(x,target)
+                styleLoss = self.styleLoss(x,target)
+                style_transfer_loss = contentLoss + styleLoss
+                output_dict['style_loss'] = style_transfer_loss
 
         x = self.final_conv(x)
-        x = F.leaky_relu(x)
-        return x
+        x = F.leaky_relu(x)        
+        output_dict['out'] = x
+        
+        return output_dict
 
     def forward_backbone(self, x):
 

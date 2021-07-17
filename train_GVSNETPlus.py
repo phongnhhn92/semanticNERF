@@ -66,12 +66,13 @@ class NeRFSystem(LightningModule):
             self.feature_models['sun'] = self.SUN        
 
         # Encoder
-        self.encoder = Unet(self.hparams, backbone_name='resnet18',
+        self.encoder = Unet(self.hparams, backbone_name='vgg19',
                             pretrained=True,
                             encoder_freeze=True,
                             out_channels=self.hparams.num_layers * self.hparams.appearance_feature,
                             parametric_upsampling=True,
-                            useSkip=False)
+                            useSkip=hparams.use_Skip,
+                            useStyleLoss = hparams.use_style_loss)
         self.feature_models['encoder'] = self.encoder
         print('Init models !!!')
 
@@ -95,8 +96,8 @@ class NeRFSystem(LightningModule):
 
         # Encoder
         B, S, H, W = data['input_seg'].shape
-        layered_appearance = self.encoder(data['style_img'], seg_mul_layer)
-        layered_appearance = layered_appearance.view(
+        output_encoder = self.encoder(data['style_img'], seg_mul_layer)
+        layered_appearance = output_encoder['out'].view(
             B, self.hparams.num_layers, self.hparams.appearance_feature, H, W)
         mpi_appearance = self.apply_association(
             layered_appearance, input_associations=associations)
@@ -171,6 +172,8 @@ class NeRFSystem(LightningModule):
 
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
+        if self.hparams.use_style_loss:
+            loss['style_loss'] = output_encoder['style_loss']
         if self.hparams.SUN_path == '':
             loss['semantic_loss'] = sun_loss['semantics_loss']
             loss['disp_loss'] = sun_loss['disp_loss']
@@ -207,6 +210,8 @@ class NeRFSystem(LightningModule):
         loss = sum(
             [v for k, v in results['loss_dict'].items()])
         self.log('train/rgb_loss', results['loss_dict']['rgb_loss'])
+        if self.hparams.use_style_loss:
+            self.log('train/style_loss', results['loss_dict']['style_loss'])
         if self.hparams.SUN_path == '':
             self.log('train/semantic_loss', results['loss_dict']['semantic_loss'])
             self.log('train/disp_loss', results['loss_dict']['disp_loss'])
