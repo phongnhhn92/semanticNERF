@@ -33,6 +33,7 @@ class CarlaGVSDataset(Dataset):
 
         self.file_list = self.get_file_list(self.split)
         self.train_camera_suffix = [f'_{str(x).zfill(2)}' for x in range(5)]
+        self.filename_list = [f'{str(x).zfill(6)}.png' for x in range(0, 10000, 10)]
 
     def get_file_list(self,split):
         if split == 'train':
@@ -80,17 +81,26 @@ class CarlaGVSDataset(Dataset):
     def __getitem__(self,index):
         if self.split=='train':
             sample = self.file_list[index]
-            trg_cam, src_cam = random.sample(self.train_camera_suffix, 2)
-            cam_group = Path(sample).parent.parent.stem
-            # For more randomness
-            # ind = random.randint(0,len(self.camera_groups)-1)
-            # cam_group = self.camera_groups[ind]
+
+            trg_cam, src_cam, style_cam_idx = random.sample(self.train_camera_suffix, 3)
+            
+            style_filename = random.sample(self.filename_list, 1)[0]
+            cam_group = Path(sample).parent.parent.stem        
+            tmp_list = self.camera_groups.copy()
+            for i,t in enumerate(tmp_list):
+                if t == cam_group:
+                    tmp_list.pop(i)
+            style_cam_type = random.sample(tmp_list, 1)[0]
+
             src_file = sample.replace(cam_group, cam_group+src_cam)
-            trg_file = sample.replace(cam_group, cam_group+trg_cam)
+            trg_file = sample.replace(cam_group, cam_group+trg_cam)            
+            style_file = sample.replace(cam_group, style_cam_type+style_cam_idx)[:-10] + style_filename
         else:
-            src_file, trg_file = self.file_list[index][0], self.file_list[index][1]
+            src_file, trg_file, style_file = self.file_list[index][0], self.file_list[index][1], self.file_list[index][-1]
+
         input_img = self._read_rgb(src_file)
         target_img = self._read_rgb(trg_file)
+        style_img = self._read_rgb(style_file)
         k_matrix = self._carla_k_matrix(height=self.height, width=self.width, fov=90)
         input_disp = self._read_disp(src_file.replace('rgb', 'depth'), k_matrix)
         target_disp = self._read_disp(trg_file.replace('rgb', 'depth'), k_matrix)
@@ -113,7 +123,7 @@ class CarlaGVSDataset(Dataset):
         data_dict['r_mat'] = r_mat
         data_dict['stereo_baseline'] = torch.Tensor([self.stereo_baseline])
         # Load style image, if passed, else the input will serve as style
-        data_dict['style_img'] = input_img.clone()
+        data_dict['style_img'] = style_img
 
         # Sample training rays of the target pose
         focal = k_matrix[0, 0]

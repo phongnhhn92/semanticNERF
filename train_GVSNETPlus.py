@@ -242,7 +242,7 @@ class NeRFSystem(LightningModule):
         save_semantic = SaveSemantics('carla')
         if batch_nb == 0:
             W, H = self.hparams.img_wh
-            input_img = batch['input_img'][0].cpu()
+            input_img = batch['style_img'][0].cpu()
             input_img = input_img * 0.5 + 0.5
 
             input_seg = torch.argmax(batch['input_seg'][0], dim=0).cpu()
