@@ -198,6 +198,7 @@ class Unet(nn.Module):
         # Add some resblock in the bottleneck
         x = self.base_res_layers(x)
 
+        style_transfer_loss = 0.
         for skip_name, upsample_block, spade_block \
                 in zip(self.shortcut_features[::-1], self.upsample_blocks, self.spade_blocks):
             skip_features = features[skip_name]
@@ -210,15 +211,14 @@ class Unet(nn.Module):
                 assert x.shape == skip_features.shape, 'Mismatch !'
                 target = skip_features.detach()
                 x = self.Adain(x,target)
-                contentLoss = self.contentLoss(x, target)
-                styleLoss = self.styleLoss(x, target)
-                style_transfer_loss = contentLoss + styleLoss
-                output_dict['style_loss'] = style_transfer_loss
-
+                #contentLoss = self.contentLoss(x, target)
+                style_transfer_loss += self.styleLoss(x, target)                
+        
         x = self.final_conv(x)
         x = F.leaky_relu(x)
         output_dict['out'] = x
-
+        output_dict['style_loss'] = style_transfer_loss
+        
         return output_dict
 
     def forward_backbone(self, x):

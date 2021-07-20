@@ -178,7 +178,7 @@ class NeRFSystem(LightningModule):
         loss = {}
         loss['rgb_loss'] = self.loss(final_results, all_rgb_gt)
         if self.hparams.use_style_loss:
-            loss['style_loss'] = output_encoder['style_loss']
+            loss['style_loss'] = 10 * output_encoder['style_loss']
         if self.hparams.SUN_path == '':
             loss['semantic_loss'] = sun_loss['semantics_loss']
             loss['disp_loss'] = sun_loss['disp_loss']
