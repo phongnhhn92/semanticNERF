@@ -96,7 +96,17 @@ class CarlaGVSDataset(Dataset):
             trg_file = sample.replace(cam_group, cam_group+trg_cam)            
             style_file = sample.replace(cam_group, style_cam_type+style_cam_idx)[:-10] + style_filename
         else:
-            src_file, trg_file, style_file = self.file_list[index][0], self.file_list[index][1], self.file_list[index][-1]
+            src_file, trg_file = self.file_list[index][0], self.file_list[index][1]
+
+            # Augment style image during training
+            list_ = src_file.split('/')
+            tmp_list = self.camera_groups.copy()
+            for i,t in enumerate(tmp_list):
+                if t == list_[-3]:
+                    tmp_list.pop(i)
+            style_cam_type = random.sample(tmp_list, 1)[0]
+            style_filename = random.sample(self.filename_list, 1)[0]
+            style_file = src_file.replace(list_[-3],style_cam_type)[:-10] + style_filename
 
         input_img = self._read_rgb(src_file)
         target_img = self._read_rgb(trg_file)
