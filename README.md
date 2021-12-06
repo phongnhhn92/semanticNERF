@@ -1,4 +1,5 @@
 # semanticNERF
+This is an unfinished work that combines novel view synthesis (using neural randiance field) using additional semantic information. Feel free to use the code if you like it.
 
 #### Slide: [link](https://docs.google.com/presentation/d/1j3yNFRC8Yd_XPg7eKPdrRCBsmp2IfE-_BMG9QVAh7EY/edit?usp=sharing)
 
